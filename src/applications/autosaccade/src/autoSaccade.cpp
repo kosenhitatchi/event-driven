@@ -257,9 +257,15 @@ bool AutoSaccadeModule::updateModule() {
         if (computeCenterMass( cmR, cmL, q )) {
             if (cmL.size()) {  //left
                 if (cmR.size()) { //left + right
-                    gazeControl->lookAtStereoPixelsSync( cmL, cmR );
-                    cout << "gazing stereo l:(" << cmL( 0 ) << ", " << cmL( 1 ) << ")" << endl;
-                    cout << "          r:(" << cmR( 0 ) << ", " << cmR( 1 ) << ")" << endl;
+                    yarp::sig::Vector tp;
+                    gazeControl->triangulate3DPoint(cmL, cmR, tp);
+
+                    if(tp[0] < -0.20) {
+
+                        gazeControl->lookAtStereoPixelsSync( cmL, cmR );
+                        cout << "gazing stereo l:(" << cmL( 0 ) << ", " << cmL( 1 ) << ")" << endl;
+                        cout << "          r:(" << cmR( 0 ) << ", " << cmR( 1 ) << ")" << endl;
+                    }
                 } else { //left but not right
                     gazeControl->lookAtMonoPixelSync(0, cmL);
                     cout << "gazing left :(" << cmL( 0 ) << ", " << cmL( 1 ) << ")" << endl;
@@ -270,7 +276,7 @@ bool AutoSaccadeModule::updateModule() {
             } else { //nor left nor right
                 return true;
             }
-            gazeControl->waitMotionDone( 0.1,5.0 );
+            gazeControl->waitMotionDone( 0.1, 4.0 );
             cout << "Finished gazing" << endl;
     
             //Making attention point red in image
@@ -405,6 +411,7 @@ bool EventBottleManager::open(const string &name) {
     this->useCallback();
     
     BufferedPort<ev::vBottle>::open(name);
+    this->start();
     return true;
 }
 
@@ -460,11 +467,13 @@ bool EventBottleManager::stop() {
 }
 
 ev::vQueue EventBottleManager::getEvents() {
-    //if (!&vQueue)
-    //    return ev::vQueue();
-    //ev::vQueue outQueue = vQueue;
-    //vQueue.clear();
-    return vQueue;
+    mutex.wait();
+    if (!&vQueue)
+        return ev::vQueue();
+    ev::vQueue outQueue = vQueue;
+    vQueue.clear();
+    mutex.post();
+    return outQueue;
 }
 
 //empty line to make gcc happy

@@ -14,10 +14,10 @@
  * Public License for more details
  */
 
-/// \defgroup Visualisation Visualisation
-/// \defgroup vFramer vFramer
-/// \ingroup Visualisation
-/// \brief converts the event-stream to an yarpview-able image
+// \defgroup Visualisation Visualisation
+// \defgroup vFramer vFramer
+// \ingroup Visualisation
+// \brief converts the event-stream to an yarpview-able image
 
 #ifndef __vFramer__
 #define __vFramer__
@@ -44,6 +44,7 @@ private:
     double period;
 
     double pyarptime;
+    bool stopped;
 
 
     //! the vBottle reading port that splits events by channel

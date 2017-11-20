@@ -1,3 +1,19 @@
+/*
+ * Copyright (C) 2015 iCub Facility - Istituto Italiano di Tecnologia
+ * Author: arren.glover@iit.it
+ * Permission is granted to copy, distribute, and/or modify this program
+ * under the terms of the GNU General Public License, version 2 or any
+ * later version published by the Free Software Foundation.
+ *
+ * A copy of the license can be found at
+ * http://www.robotcub.org/icub/license/gpl.txt
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+ * Public License for more details
+*/
+
 #ifndef __VSURFACEHANDLER__
 #define __VSURFACEHANDLER__
 
@@ -13,6 +29,7 @@
 
 namespace ev {
 
+/// \brief an asynchronous reading port that accepts vBottles and decodes them
 class queueAllocator : public yarp::os::BufferedPort<ev::vBottle>
 {
 private:
@@ -22,14 +39,28 @@ private:
     yarp::os::Mutex m;
     yarp::os::Mutex dataready;
 
+    unsigned int qlimit;
+    unsigned int delay_nv;
+    long unsigned int delay_t;
+    double event_rate;
+
 public:
 
+    /// \brief constructor
     queueAllocator()
     {
+        qlimit = 0;
+        delay_nv = 0;
+        delay_t = 0;
+        event_rate = 0;
+
+        dataready.lock();
+
         useCallback();
         setStrict();
     }
 
+    /// \brief desctructor
     ~queueAllocator()
     {
         m.lock();
@@ -39,49 +70,113 @@ public:
         m.unlock();
     }
 
+    /// \brief the callback decodes the incoming vBottle and adds it to the
+    /// list of received vBottles. The yarp, and event timestamps are updated.
     void onRead(ev::vBottle &inputbottle)
     {
-
         //make a new vQueue
         m.lock();
+
+        if(qlimit && qq.size() >= qlimit) {
+            m.unlock();
+            return;
+        }
         qq.push_back(new vQueue);
         yarp::os::Stamp yarpstamp;
         getEnvelope(yarpstamp);
         sq.push_back(yarpstamp);
+
         m.unlock();
+
+
         //and decode the data
         inputbottle.addtoendof<ev::AddressEvent>(*(qq.back()));
+
+        //update the meta data
+        m.lock();
+        delay_nv += qq.back()->size();
+        int dt = qq.back()->back()->stamp - qq.back()->front()->stamp;
+        if(dt < 0) dt += vtsHelper::max_stamp;
+        delay_t += dt;
+        if(dt)
+            event_rate = qq.back()->size() / (double)dt;
+        m.unlock();
+
+        //if getNextQ is blocking - let it get the new data
         dataready.unlock();
     }
 
+    /// \brief ask for a pointer to the next vQueue. Blocks if no data is ready.
     ev::vQueue* getNextQ(yarp::os::Stamp &yarpstamp)
     {
         dataready.lock();
-        if(qq.size() > 1) {
+        if(qq.size()) {
             yarpstamp = sq.front();
             return qq.front();
-        }
-        else
+        }  else {
             return 0;
+        }
 
     }
 
+    /// \brief remove the most recently read vQueue from the list and deallocate
+    /// the memory
     void scrapQ()
     {
         m.lock();
+
+        delay_nv -= qq.front()->size();
+        int dt = qq.front()->back()->stamp - qq.front()->front()->stamp;
+        if(dt < 0) dt += vtsHelper::max_stamp;
+        delay_t -= dt;
+
         delete qq.front();
         qq.pop_front();
         sq.pop_front();
         m.unlock();
     }
 
+    /// \brief set the maximum number of qs that can be stored in the buffer.
+    /// A value of 0 keeps all qs.
+    void setQLimit(unsigned int number_of_qs)
+    {
+        qlimit = number_of_qs;
+    }
+
+    /// \brief unBlocks the blocking call in getNextQ. Useful to ensure a
+    /// graceful shutdown. No guarantee the return of getNextQ will be valid.
     void releaseDataLock()
     {
         dataready.unlock();
     }
 
+    /// \brief ask for the number of vQueues currently allocated.
+    int queryunprocessed()
+    {
+        return qq.size();
+    }
+
+    /// \brief ask for the number of events in all vQueues.
+    unsigned int queryDelayN()
+    {
+        return delay_nv;
+    }
+
+    /// \brief ask for the total time spanned by all vQueues.
+    double queryDelayT()
+    {
+        return delay_t * vtsHelper::tsscaler;
+    }
+
+    /// \brief ask for the high precision event rate
+    double queryRate()
+    {
+        return event_rate * vtsHelper::vtsscaler;
+    }
+
 };
 
+/// \brief asynchronously read events and push them in a vSurface
 class surfaceThread : public yarp::os::Thread
 {
 private:
@@ -197,6 +292,7 @@ public:
 
 };
 
+/// \brief asynchronously read events and push them in a historicalSurface
 class hSurfThread : public yarp::os::Thread
 {
 private:
@@ -206,8 +302,6 @@ private:
     queueAllocator allocatorCallback;
     historicalSurface surfaceleft;
     historicalSurface surfaceright;
-    ev::vNoiseFilter filter;
-
     yarp::os::Mutex m;
 
     //current stamp to propagate
@@ -216,26 +310,26 @@ private:
 
     //synchronising value (add to it when stamps come in, subtract from it
     // when querying events).
-    double cputime;
-    int cpudelay;
+    double cputimeL;
+    int cpudelayL;
+    double cputimeR;
+    int cpudelayR;
 
 public:
 
     hSurfThread()
     {
-        cpudelay = 0;
         vstamp = 0;
-        cputime = yarp::os::Time::now();
-        maxcpudelay = 0.5 / vtsHelper::tsscaler;
+        cpudelayL = cpudelayR = 0;
+        cputimeL = cputimeR = yarp::os::Time::now();
+        maxcpudelay = 0.05 * vtsHelper::vtsscaler;
     }
 
     void configure(int height, int width, double maxcpudelay)
     {
-        //this->maxcpudelay = maxcpudelay / vtsHelper::tsscaler;
-        this->maxcpudelay = vtsHelper::max_stamp * 0.25;
+        this->maxcpudelay = maxcpudelay * vtsHelper::vtsscaler;
         surfaceleft.initialise(height, width);
         surfaceright.initialise(height, width);
-        filter.initialise(width, height, 100000, 1);
     }
 
     bool open(std::string portname)
@@ -256,6 +350,9 @@ public:
 
     void run()
     {
+        static int maxqs = 4;
+        bool allowproc = true;
+
         while(true) {
 
             ev::vQueue *q = 0;
@@ -264,28 +361,34 @@ public:
             }
             if(isStopping()) break;
 
-            for(ev::vQueue::iterator qi = q->begin(); qi != q->end(); qi++) {
 
-                auto ae = is_event<AE>(*qi);
-                if(!filter.check(ae->x, ae->y, ae->polarity, ae->channel, ae->stamp)) {
-                    continue;
-                }
+            int nqs = allocatorCallback.queryunprocessed();
 
+            if(allowproc)
                 m.lock();
 
-                int dt = (*qi)->stamp - vstamp;
-                if(dt < 0) dt += vtsHelper::max_stamp;
-                cpudelay += dt;
-                vstamp = (*qi)->stamp;
+            if(nqs >= maxqs)
+                allowproc = false;
+            else if(nqs < maxqs)
+                allowproc = true;
+
+            int dt = q->back()->stamp - vstamp;
+            if(dt < 0) dt += vtsHelper::max_stamp;
+            cpudelayL += dt;
+            cpudelayR += dt;
+            vstamp = q->back()->stamp;
+
+            for(ev::vQueue::iterator qi = q->begin(); qi != q->end(); qi++) {
 
                 if((*qi)->getChannel() == 0)
                     surfaceleft.addEvent(*qi);
                 else if((*qi)->getChannel() == 1)
                     surfaceright.addEvent(*qi);
 
-                m.unlock();
-
             }
+
+            if(allowproc)
+                m.unlock();
 
             allocatorCallback.scrapQ();
 
@@ -295,24 +398,38 @@ public:
 
     vQueue queryROI(int channel, unsigned int querySize, int x, int y, int r)
     {
-
-
         vQueue q;
 
         m.lock();
+
         double cpunow = yarp::os::Time::now();
 
-        cpudelay -= (cpunow - cputime) * vtsHelper::vtsscaler * 1.02;
-        cputime = cpunow;
+        if(channel == 0) {
 
-        if(cpudelay < 0) cpudelay = 0;
-        if(cpudelay > maxcpudelay) cpudelay = maxcpudelay;
+            cpudelayL -= (cpunow - cputimeL) * vtsHelper::vtsscaler * 1.01;
+            cputimeL = cpunow;
 
+            if(cpudelayL < 0) cpudelayL = 0;
+            if(cpudelayL > maxcpudelay) {
+                yWarning() << "CPU delay hit maximum";
+                cpudelayL = maxcpudelay;
+            }
 
-        if(channel == 0)
-            q = surfaceleft.getSurface(cpudelay, querySize, r, x, y);
-        else
-            q = surfaceright.getSurface(cpudelay, querySize, r, x, y);
+            q = surfaceleft.getSurface(cpudelayL, querySize, r, x, y);
+        } else {
+
+            cpudelayR -= (cpunow - cputimeR) * vtsHelper::vtsscaler * 1.01;
+            cputimeR = cpunow;
+
+            if(cpudelayR < 0) cpudelayR = 0;
+            if(cpudelayR > maxcpudelay) {
+                yWarning() << "CPU delay hit maximum";
+                cpudelayR = maxcpudelay;
+            }
+
+            q = surfaceright.getSurface(cpudelayR, querySize, r, x, y);
+        }
+
         m.unlock();
 
         return q;
@@ -320,31 +437,51 @@ public:
 
     vQueue queryWindow(int channel, unsigned int querySize)
     {
-        double cpunow = yarp::os::Time::now();
-
         vQueue q;
 
         m.lock();
 
-        cpudelay -= (cpunow - cputime) * vtsHelper::vtsscaler * 1.02;
-        cputime = cpunow;
+        double cpunow = yarp::os::Time::now();
 
-        if(cpudelay < 0) cpudelay = 0;
-        if(cpudelay > maxcpudelay) cpudelay = maxcpudelay;
+        if(channel == 0) {
 
+            cpudelayL -= (cpunow - cputimeL) * vtsHelper::vtsscaler * 1.01;
+            cputimeL = cpunow;
 
-        if(channel == 0)
-            q = surfaceleft.getSurface(cpudelay, querySize);
-        else
-            q = surfaceright.getSurface(cpudelay, querySize);
+            if(cpudelayL < 0) cpudelayL = 0;
+            if(cpudelayL > maxcpudelay) {
+                yWarning() << "CPU delay hit maximum";
+                cpudelayL = maxcpudelay;
+            }
+
+            q = surfaceleft.getSurface(cpudelayL, querySize);
+        }
+        else {
+
+            cpudelayR -= (cpunow - cputimeR) * vtsHelper::vtsscaler * 1.01;
+            cputimeR = cpunow;
+
+            if(cpudelayR < 0) cpudelayR = 0;
+            if(cpudelayR > maxcpudelay) {
+                yWarning() << "CPU delay hit maximum";
+                cpudelayR = maxcpudelay;
+            }
+
+            q = surfaceright.getSurface(cpudelayR, querySize);
+        }
+
         m.unlock();
 
         return q;
     }
 
-    double queryDelay()
+    double queryDelay(int channel = 0)
     {
-        return cpudelay * vtsHelper::tsscaler;
+        if(channel) {
+            return cpudelayR * vtsHelper::tsscaler;
+        } else {
+            return cpudelayL * vtsHelper::tsscaler;
+        }
     }
 
     yarp::os::Stamp queryYstamp()
@@ -352,10 +489,15 @@ public:
         return ystamp;
     }
 
-    int queryVstamp()
+    int queryVstamp(int channel = 0)
     {
+        int modvstamp;
         m.lock();
-        int modvstamp = vstamp - cpudelay;
+        if(channel) {
+            modvstamp = vstamp - cpudelayR;
+        } else {
+            modvstamp = vstamp - cpudelayL;
+        }
         m.unlock();
 
         if(modvstamp < 0) modvstamp += vtsHelper::max_stamp;
@@ -363,8 +505,15 @@ public:
 
     }
 
+    int queryQDelay()
+    {
+        return allocatorCallback.queryunprocessed();
+    }
+
 };
 
+/// \brief automatically accept events from a port and push them into a
+/// vTempWindow
 class tWinThread : public yarp::os::Thread
 {
 private:
@@ -373,7 +522,11 @@ private:
     vTempWindow windowleft;
     vTempWindow windowright;
 
-    yarp::os::Mutex m;
+    yarp::os::Mutex safety;
+
+    int strictUpdatePeriod;
+    int currentPeriod;
+    yarp::os::Mutex waitforquery;
     yarp::os::Stamp yarpstamp;
     unsigned int ctime;
 
@@ -382,26 +535,35 @@ public:
     tWinThread()
     {
         ctime = 0;
+        strictUpdatePeriod = 0;
+        currentPeriod = 0;
     }
 
-    bool open(std::string portname)
+    bool open(std::string portname, int period = 0)
     {
+        strictUpdatePeriod = period;
+        if(strictUpdatePeriod) yInfo() << "Forced update every" << period * vtsHelper::tsscaler <<"s, or"<< period << "event timestamps";
         if(!allocatorCallback.open(portname))
             return false;
 
-        start();
-        return true;
+        return start();
     }
 
     void onStop()
     {
         allocatorCallback.close();
         allocatorCallback.releaseDataLock();
+        waitforquery.unlock();
     }
 
     void run()
     {
-        while(true) {
+        if(strictUpdatePeriod) {
+            safety.lock();
+            waitforquery.lock();
+        }
+
+        while(!isStopping()) {
 
             ev::vQueue *q = 0;
             while(!q && !isStopping()) {
@@ -411,8 +573,20 @@ public:
 
             for(ev::vQueue::iterator qi = q->begin(); qi != q->end(); qi++) {
 
-                m.lock();
+                if(!strictUpdatePeriod) safety.lock();
 
+                if(strictUpdatePeriod) {
+                    int dt = (*qi)->stamp - ctime;
+                    if(dt < 0) dt += vtsHelper::max_stamp;
+                    currentPeriod += dt;
+                    if(currentPeriod > strictUpdatePeriod) {
+                        safety.unlock();
+                        waitforquery.lock();
+                        safety.lock();
+                        currentPeriod = 0;
+                    }
+
+                }
                 ctime = (*qi)->stamp;
 
                 if((*qi)->getChannel() == 0)
@@ -420,27 +594,28 @@ public:
                 else if((*qi)->getChannel() == 1)
                     windowright.addEvent(*qi);
 
-                m.unlock();
+                if(!strictUpdatePeriod) safety.unlock();
 
             }
 
             allocatorCallback.scrapQ();
 
         }
-
+        if(strictUpdatePeriod)
+            safety.unlock();
     }
 
     vQueue queryWindow(int channel)
     {
         vQueue q;
 
-        m.lock();
+        safety.lock();
         if(channel == 0)
             q = windowleft.getWindow();
         else
             q = windowright.getWindow();
-        m.unlock();
-
+        waitforquery.unlock();
+        safety.unlock();
         return q;
     }
 
@@ -452,6 +627,8 @@ public:
 
 };
 
+/// \brief automatically accept multiple event types from different ports
+/// (e.g. as in the vFramer)
 class syncvstreams
 {
 private:
@@ -460,11 +637,16 @@ private:
     //std::deque<tWinThread> iPorts;
     yarp::os::Stamp yStamp;
     int vStamp;
+    int strictUpdatePeriod;
     //std::map<std::string, int> labelMap;
 
 public:
 
-    syncvstreams(void) {}
+    syncvstreams(void)
+    {
+        strictUpdatePeriod = 0;
+        vStamp = 0;
+    }
 
     bool open(std::string moduleName, std::string eventType)
     {
@@ -473,7 +655,7 @@ public:
             return true;
 
         //otherwise open a new port
-        if(!iPorts[eventType].open(moduleName + "/" + eventType + ":i"))
+        if(!iPorts[eventType].open(moduleName + "/" + eventType + ":i", strictUpdatePeriod))
             return false;
 
         return true;
@@ -508,6 +690,11 @@ public:
     int getvstamp()
     {
         return vStamp;
+    }
+
+    void setStrictUpdatePeriod(int period)
+    {
+        strictUpdatePeriod = period;
     }
 
 };

@@ -12,6 +12,8 @@ class vPartObsThread : public yarp::os::Thread
 {
 private:
 
+    yarp::os::Mutex processing;
+    yarp::os::Mutex done;
     int pStart;
     int pEnd;
 
@@ -27,7 +29,9 @@ public:
     vPartObsThread(int pStart, int pEnd);
     void setDataSources(std::vector<vParticle> *particles,
                         std::vector<int> *deltats, ev::vQueue *stw, yarp::sig::ImageOf<yarp::sig::PixelBgr> *debugIm);
-    double getNormVal() { return normval; }
+    void process();
+    double waittilldone();
+
     bool threadInit() { return true; }
     void run();
     void threadRelease() {}
@@ -40,8 +44,8 @@ class particleProcessor : public yarp::os::Thread
 {
 private:
 
-    //surfaceThread eventhandler2;
-    hSurfThread eventhandler2;
+    hSurfThread* eventhandler;
+    collectorPort* eventsender;
     preComputedBins pcb;
     std::vector<vPartObsThread *> computeThreads;
     int nThreads;
@@ -50,8 +54,8 @@ private:
     double pytime;
     int rbound_min;
     int rbound_max;
+    std::string name;
 
-    yarp::os::BufferedPort<ev::vBottle> vBottleOut;
     yarp::os::BufferedPort<yarp::sig::ImageOf <yarp::sig::PixelBgr> > debugOut;
     yarp::os::BufferedPort<yarp::os::Bottle> scopeOut;
     ev::vtsHelper unwrap;
@@ -61,12 +65,10 @@ private:
     double avgr;
     double avgtw;
     double maxtw;
-    double maxlikelihood;
     double pwsumsq;
     double particleVariance;
     int rate;
-    std::string name;
-    bool strict;
+
     int camera;
     bool useroi;
 
@@ -97,7 +99,7 @@ public:
         seedx = x; seedy = y; seedr = r;
     }
 
-    particleProcessor(unsigned int height, unsigned int width, std::string name, bool strict);
+    particleProcessor(std::string name, unsigned int height, unsigned int width, hSurfThread* eventhandler, collectorPort* eventsender);
     bool threadInit();
     void run();
     void threadRelease();

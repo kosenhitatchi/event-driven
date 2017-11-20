@@ -1,3 +1,19 @@
+/*
+ * Copyright (C) 2015 iCub Facility - Istituto Italiano di Tecnologia
+ * Author: arren.glover@iit.it
+ * Permission is granted to copy, distribute, and/or modify this program
+ * under the terms of the GNU General Public License, version 2 or any
+ * later version published by the Free Software Foundation.
+ *
+ * A copy of the license can be found at
+ * http://www.robotcub.org/icub/license/gpl.txt
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+ * Public License for more details
+*/
+
 #ifndef __VFILTER__
 #define __VFILTER__
 
@@ -5,6 +21,7 @@
 
 namespace ev {
 
+/// \brief an efficient event-based salt and pepper filter
 class vNoiseFilter
 {
 private:
@@ -19,8 +36,10 @@ private:
 
 public:
 
+    /// \brief constructor
     vNoiseFilter() : Tsize(0), Ssize(0) {}
 
+    /// \brief initialise the sensor size and the filter parameters.
     void initialise(double width, double height, int Tsize, unsigned int Ssize)
     {
         TSleftL.resize(width + 2 * Ssize, height + 2 * Ssize);
@@ -37,6 +56,8 @@ public:
         this->Ssize = Ssize;
     }
 
+    /// \brief classifies the event as noise or signal
+    /// \returns false if the event is noise
     bool check(int x, int y, int p, int c, int ts)
     {
         if(!Ssize) return false;
