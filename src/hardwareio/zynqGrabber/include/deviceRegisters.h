@@ -22,8 +22,8 @@
 
 // vsctrl
 
-#define I2C_ADDRESS_LEFT		 0x11
-#define I2C_ADDRESS_RIGHT		 0x10
+#define I2C_ADDRESS_LEFT		 0x10
+#define I2C_ADDRESS_RIGHT		 0x11
 //#define I2C_ADDRESS_VSCTRL       0x11
 //#define I2C_ADDRESS              I2C_ADDRESS_VSCTRL
 
@@ -98,9 +98,13 @@
 // hpu_core & spinn2neu
 
 #define MAGIC_NUM 0
+#define IOC_READ_TS         _IOR (MAGIC_NUM,  1, void *)
+#define IOC_CLEAR_TS        _IOW (MAGIC_NUM,  2, void *)
 #define AER_VERSION         _IOR (MAGIC_NUM,  3, void *)
-#define AER_TIMESTAMP       _IOR (MAGIC_NUM,  8, void *)
 #define AER_GEN_REG         _IOWR(MAGIC_NUM,  6, void *)
+#define IOC_SET_TS_TYPE     _IOW (MAGIC_NUM,  7, void *)
+#define AER_TIMESTAMP       _IOR (MAGIC_NUM,  8, void *)
+#define IOC_GET_PS          _IOR (MAGIC_NUM,  9, void *)
 #define AER_SET_LOC_LBCK    _IOW (MAGIC_NUM, 10, void *)
 #define AER_SET_REM_LBCK    _IOW (MAGIC_NUM, 11, void *)
 #define AER_SET_FAR_LBCK    _IOW (MAGIC_NUM, 12, void *)
@@ -123,6 +127,7 @@
 #define CTRL_ENABLE_REM_LBCK 0x01000000
 #define CTRL_ENABLE_LOC_LBCK 0x02000000
 #define CTRL_ENABLE_FAR_LBCK 0x04000000
+#define CTRL_32BITCLOCK      0x00008000
 
 // INterrupt Mask register bit field
 #define MSK_RXBUF_EMPTY  0x00000001

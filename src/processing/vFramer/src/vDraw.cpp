@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010 eMorph Group iCub Facility
+ * Copyright (C) 2017 event-driven group iCub Facility
  * Authors: Arren Glover
  * Permission is granted to copy, distribute, and/or modify this program
  * under the terms of the GNU General Public License, version 2 or any
@@ -29,6 +29,8 @@ vDraw * createDrawer(std::string tag)
         return new isoDraw();
     if(tag == interestDraw::drawtype)
         return new interestDraw();
+    if(tag == circleDraw::drawtype)
+        return new circleDraw();
     if(tag == flowDraw::drawtype)
         return new flowDraw();
     if(tag == lifeDraw::drawtype)
@@ -37,6 +39,10 @@ vDraw * createDrawer(std::string tag)
         return new clusterDraw();
     if(tag == blobDraw::drawtype)
         return new blobDraw();
+    if(tag == isoInterestDraw::drawtype)
+        return new isoInterestDraw();
+    if(tag == isoCircDraw::drawtype)
+        return new isoCircDraw();
     return 0;
 
 }
@@ -55,8 +61,13 @@ std::string addressDraw::getEventType()
 
 void addressDraw::draw(cv::Mat &image, const ev::vQueue &eSet, int vTime)
 {
-    image = cv::Mat(Ylimit, Xlimit, CV_8UC3);
-    image.setTo(255);
+
+    if(image.empty()) {
+        image = cv::Mat(Ylimit, Xlimit, CV_8UC3);
+        image.setTo(255);
+    }
+//    image = cv::Mat(Ylimit, Xlimit, CV_8UC3);
+//    image.setTo(255);
 
     if(checkStagnancy(eSet) > clearThreshold) {
  //       return;
@@ -194,8 +205,8 @@ void clusterDraw::draw(cv::Mat &image, const vQueue &eSet, int vTime)
     cv::Scalar blue = CV_RGB(0, 0, 255);
 
     if(image.empty()) {
-        image = cv::Mat(Xlimit, Ylimit, CV_8UC3);
-        image.setTo(0);
+        image = cv::Mat(Ylimit, Xlimit, CV_8UC3);
+        image.setTo(255);
     }
 
     if(checkStagnancy(eSet) > clearThreshold) {
@@ -243,8 +254,83 @@ void clusterDraw::draw(cv::Mat &image, const vQueue &eSet, int vTime)
         double alpha = 0.5*atan2f(2*sig_xy_, sig_y2_ - sig_x2_);
 
         alpha = alpha * 180 / M_PI; //convert to degrees for openCV ellipse function
-        //cv::ellipse(image, centr, cv::Size(a,b), alpha, 0, 360, blue, 2);
-        cv::circle(image, centr, v->sigx, blue, 2);
+        cv::ellipse(image, centr, cv::Size(a,b), alpha, 0, 360, blue, 2);
+
+    }
+
+}
+
+const std::string circleDraw::drawtype = "CIRC";
+
+std::string circleDraw::getDrawType()
+{
+    return circleDraw::drawtype;
+}
+
+std::string circleDraw::getEventType()
+{
+    return GaussianAE::tag;
+}
+
+void circleDraw::draw(cv::Mat &image, const vQueue &eSet, int vTime)
+{
+    cv::Scalar blue = CV_RGB(0, 0, 255);
+    cv::Scalar red = CV_RGB(255, 0, 0);
+
+    if(image.empty()) {
+        image = cv::Mat(Ylimit, Xlimit, CV_8UC3);
+        image.setTo(255);
+    }
+
+    if(eSet.empty()) return;
+
+    //update the 'persistence' the current state of each of the cluster ID's
+    for(vQueue::const_iterator qi = eSet.begin(); qi != eSet.end(); qi++) {
+        auto vp = is_event<GaussianAE>(*qi);
+        if(vp) {
+            persistance[vp->ID] = vp;
+        }
+    }
+
+    std::map<int, event<GaussianAE> >::iterator ci;
+    for(ci = persistance.begin(); ci != persistance.end(); ci++) {
+
+        auto v = ci->second;
+        if(v->polarity) continue;
+
+        if(v->x < 0 || v->x >= Xlimit || v->y < 0 || v->y >= Ylimit) continue;
+        if(v->sigxy >= v->sigx) continue;
+
+        cv::Point centr(v->x, v->y);
+        if(flip) {
+            centr.x = Xlimit - 1 - centr.x;
+            centr.y = Ylimit - 1 - centr.y;
+        }
+
+        cv::circle(image, centr, v->sigx - v->sigxy, red, 1.0);
+        cv::circle(image, centr, v->sigx + v->sigxy, red, 1.0);
+
+        continue;
+    }
+
+    for(ci = persistance.begin(); ci != persistance.end(); ci++) {
+
+        auto v = ci->second;
+        if(!v->polarity) continue;
+
+        if(v->x < 0 || v->x >= Xlimit || v->y < 0 || v->y >= Ylimit) continue;
+        if(v->sigxy >= v->sigx) continue;
+
+        cv::Point centr(v->x, v->y);
+        if(flip) {
+            centr.x = Xlimit - 1 - centr.x;
+            centr.y = Ylimit - 1 - centr.y;
+        }
+
+        cv::circle(image, centr, v->sigx - v->sigxy, blue, 1.0);
+        cv::circle(image, centr, v->sigx + v->sigxy, blue, 1.0);
+
+        continue;
     }
 
 }
@@ -323,9 +409,10 @@ void flowDraw::draw(cv::Mat &image, const vQueue &eSet, int vTime)
     if(checkStagnancy(eSet) > clearThreshold) return;
 
 
-    //double vx_mean = 0, vy_mean = 0, n = 0;
+    double vx_mean = 0, vy_mean = 0;
+
     int line_thickness = 0;
-    cv::Scalar line_color = CV_RGB(255,0,0);
+    cv::Scalar line_color = CV_RGB(0,0,255);
     cv::Point p_start,p_end;
 
     vQueue::const_reverse_iterator qi;
@@ -341,6 +428,18 @@ void flowDraw::draw(cv::Mat &image, const vQueue &eSet, int vTime)
         int y = ofp->y;
         float vx = ofp->vx;
         float vy = ofp->vy;
+
+        if(flip) {
+            x = Xlimit - 1 - x;
+            y = Ylimit - 1 - y;
+            double temp;
+            temp = vx;
+            vx = vy;
+            vy = temp;
+        }
+
+        vx_mean += vx;
+        vy_mean += vy;
 
         //Starting point of the line
         p_start.x = x;
@@ -367,6 +466,27 @@ void flowDraw::draw(cv::Mat &image, const vQueue &eSet, int vTime)
 
     }
 
+    vx_mean = vx_mean/eSet.size();
+    vy_mean = vy_mean/eSet.size();
+    p_start.x = Xlimit/2;
+    p_start.y = Ylimit/2;
+    double h = 15;
+    double theta = atan2(vy_mean, vx_mean);
+    p_end.x = (int) (p_start.x + h * sin(theta));
+    p_end.y = (int) (p_start.y + h * cos(theta));
+
+    cv::Scalar line_color2 = CV_RGB(0,255,0);
+    cv::line(image, p_start, p_end, line_color2, 3, 4);
+
+    //Draw the tips of the arrow
+    p_start.x = (int) (p_end.x - 5*sin(theta + M_PI/4));
+    p_start.y = (int) (p_end.y - 5*cos(theta + M_PI/4));
+    cv::line(image, p_start, p_end, line_color2, 3, 4);
+
+    p_start.x = (int) (p_end.x - 5*sin(theta - M_PI/4));
+    p_start.y = (int) (p_end.y - 5*cos(theta - M_PI/4));
+    cv::line(image, p_start, p_end, line_color2, 3, 4);
+
 }
 
 const std::string interestDraw::drawtype = "AE-INT";
@@ -389,22 +509,34 @@ void interestDraw::draw(cv::Mat &image, const ev::vQueue &eSet, int vTime)
         image.setTo(255);
     }
 
+    if(eSet.empty()) return;
     if(checkStagnancy(eSet) > clearThreshold) {
         return;
     }
 
-    int r = 1;
-    CvScalar c = CV_RGB(255, 0, 0);
+    int r = 2;
+    CvScalar c1 = CV_RGB(255, 0, 0);
+    CvScalar c2 = CV_RGB(0, 255, 255);
     ev::vQueue::const_reverse_iterator qi;
     for(qi = eSet.rbegin(); qi != eSet.rend(); qi++) {
         int dt = eSet.back()->stamp - (*qi)->stamp;
         if(dt < 0) dt += ev::vtsHelper::maxStamp();
-        if(dt > twindow) continue;
+        if(dt > twindow) break;
 
         auto v = as_event<ev::LabelledAE>(*qi);
         if(!v) continue;
-        cv::Point centr(v->x, v->y);
-        cv::circle(image, centr, r, c);
+        int px = v->x;
+        int py = v->y;
+        if(flip) {
+            px = Xlimit - 1 - px;
+            py = Ylimit - 1 - py;
+        }
+
+        cv::Point centr(px, py);
+        if(v->ID == 1)
+            cv::circle(image, centr, r, c1, CV_FILLED);
+        else
+            cv::circle(image, centr, r, c2, CV_FILLED);
     }
 
 }
@@ -436,11 +568,11 @@ void isoDraw::pttr(int &x, int &y, int &z) {
 
 void isoDraw::initialise()
 {
-    maxdt = 1; //just to initialise (but we don't use here)
+    maxdt = vtsHelper::max_stamp / 2.0; //just to initialise (but we don't use here)
     Zlimit = Xlimit * 3;
 
     thetaX = 20 * 3.14 / 180.0;  //PITCH
-    thetaY = 40 * 3.14 / 180.0; //YAW
+    thetaY = 40 * 3.14 / 180.0;  //YAW
 
     CY = cos(thetaY); SY = sin(thetaY);
     CX = cos(thetaX); SX = sin(thetaX);
@@ -476,6 +608,7 @@ void isoDraw::initialise()
 
     cv::Scalar invertedtextc = CV_RGB(125, 125, 125);
     cv::Vec3b invertedaxisc = cv::Vec3b(255, 255, 255);
+    cv::Vec3b invertedframec = cv::Vec3b(125, 125, 125);
 
     for(int xi = 0; xi < Xlimit; xi++) {
         x = xi; y = 0; z = 0; pttr(x, y, z);
@@ -529,6 +662,35 @@ void isoDraw::initialise()
         baseimage.at<cv::Vec3b>(y, x) = invertedaxisc;
     }
 
+    for(tsi = vtsHelper::vtsscaler / 10.0; tsi < vtsHelper::max_stamp / 2; tsi += vtsHelper::vtsscaler / 10.0) {
+
+        int zc = ((double)tsi / maxdt) * Zlimit + 0.5;
+
+        for(int xi = 0; xi < Xlimit; xi++) {
+            x = xi; y = 0; z = zc; pttr(x, y, z);
+            y += imageyshift; x += imagexshift;
+            baseimage.at<cv::Vec3b>(y, x) = invertedframec;
+            x = xi; y = Ylimit; z = zc; pttr(x, y, z);
+            y += imageyshift; x += imagexshift;
+            baseimage.at<cv::Vec3b>(y, x) = invertedframec;
+        }
+
+        for(int yi = 0; yi <= Ylimit; yi++) {
+            x = 0; y = yi; z = zc; pttr(x, y, z);
+            y += imageyshift; x += imagexshift;
+            baseimage.at<cv::Vec3b>(y, x) = invertedframec;
+            x = Xlimit; y = yi; z = zc; pttr(x, y, z);
+            y += imageyshift; x += imagexshift;
+            baseimage.at<cv::Vec3b>(y, x) = invertedframec;
+
+        }
+
+    }
+
+    yInfo() << "Finished setting up ISO draw";
+
+
+
 }
 
 void isoDraw::draw(cv::Mat &image, const ev::vQueue &eSet, int vTime)
@@ -538,20 +700,23 @@ void isoDraw::draw(cv::Mat &image, const ev::vQueue &eSet, int vTime)
     isoimage.setTo(255);
 
     if(checkStagnancy(eSet) > clearThreshold) {
-       // return;
+        // return;
     }
 
     if(eSet.empty()) return;
 
     int cts = eSet.back()->stamp;
     int dt = cts - eSet.front()->stamp;
-    if(dt < 0) dt += ev::vtsHelper::maxStamp();
+    if(dt < 0) dt += ev::vtsHelper::max_stamp;
     maxdt = std::max(maxdt, dt);
 
-    ev::vQueue::const_iterator qi;
-    for(qi = eSet.begin(); qi != eSet.end(); qi++) {
+    int skip = 1 + eSet.size() / 200000;
 
-        auto aep = is_event<AE>(*qi);
+    //ev::vQueue::const_iterator qi;
+    //for(qi = eSet.begin(); qi != eSet.end(); qi += skip) {
+    for(int i = eSet.size() - 1; i >= 0; i -= skip) {
+
+        auto aep = is_event<AE>(eSet[i]);
 
         //transform values
         int dt = cts - aep->stamp;
@@ -573,11 +738,10 @@ void isoDraw::draw(cv::Mat &image, const ev::vQueue &eSet, int vTime)
         }
 
         if(!aep->polarity) {
-                isoimage.at<cv::Vec3b>(py, px) = cv::Vec3b(255, 160, 255);
+            isoimage.at<cv::Vec3b>(py, px) = cv::Vec3b(255, 160, 255);
         } else {
-                isoimage.at<cv::Vec3b>(py, px) = cv::Vec3b(160, 255, 160);
+            isoimage.at<cv::Vec3b>(py, px) = cv::Vec3b(160, 255, 160);
         }
-
     }
 
     if(!image.empty()) {
@@ -605,6 +769,96 @@ void isoDraw::draw(cv::Mat &image, const ev::vQueue &eSet, int vTime)
 
 }
 
+/********************************************************/
+const std::string isoInterestDraw::drawtype = "ISO-INT";
+
+std::string isoInterestDraw::getDrawType()
+{
+    return isoInterestDraw::drawtype;
+}
+
+std::string isoInterestDraw::getEventType()
+{
+    return LabelledAE::tag;
+}
+
+void isoInterestDraw::draw(cv::Mat &image, const ev::vQueue &eSet, int vTime)
+{
+
+    cv::Mat isoimage = baseimage.clone();
+    isoimage.setTo(255);
+
+    if(checkStagnancy(eSet) > clearThreshold) {
+         return;
+    }
+
+    if(eSet.empty()) return;
+
+    int cts = eSet.back()->stamp;
+    int dt = cts - eSet.front()->stamp;
+    if(dt < 0) dt += ev::vtsHelper::max_stamp;
+    maxdt = std::max(maxdt, dt);
+
+    int skip = 1 + eSet.size() / 50000;
+
+    int r = 1;
+    CvScalar c1 = CV_RGB(255, 0, 0);
+    CvScalar c2 = CV_RGB(0, 255, 255);
+
+    //ev::vQueue::const_iterator qi;
+    //for(qi = eSet.begin(); qi != eSet.end(); qi += skip) {
+    for(int i = eSet.size() - 1; i >= 0; i -= skip) {
+
+        auto cep = is_event<LabelledAE>(eSet[i]);
+
+        //transform values
+        int dt = cts - cep->stamp;
+        if(dt < 0) dt += ev::vtsHelper::maxStamp();
+        dt = ((double)dt / maxdt) * Zlimit + 0.5;
+        int px = cep->x;
+        int py = cep->y;
+        if(flip) {
+            px = Xlimit - 1 - px;
+            py = Ylimit - 1 - py;
+        }
+        int pz = dt;
+        pttr(px, py, pz);
+        px += imagexshift;
+        py += imageyshift;
+
+        if(px < 0 || px >= imagewidth || py < 0 || py >= imageheight) {
+            continue;
+        }
+
+        cv::Point centr(px, py);
+        if(cep->ID == 1)
+            cv::circle(image, centr, r, c1);
+        else
+            cv::circle(image, centr, r, c2);
+    }
+
+    if(!image.empty()) {
+        for(int y = 0; y < image.rows; y++) {
+            for(int x = 0; x < image.cols; x++) {
+                cv::Vec3b &pixel = image.at<cv::Vec3b>(y, x);
+
+                if(pixel[0] != 255 || pixel[1] != 255 || pixel[2] != 255) {
+
+                    int px = x, py = y;
+                    if(px < 0 || px >= imagewidth || py < 0 || py >= imageheight)
+                        continue;
+
+                    isoimage.at<cv::Vec3b>(py, px) = pixel;
+                }
+            }
+        }
+    }
+
+
+
+    image = isoimage - baseimage;
+
+}
 
 
 

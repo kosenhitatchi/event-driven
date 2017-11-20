@@ -16,104 +16,6 @@ void drawDistribution(yarp::sig::ImageOf<yarp::sig::PixelBgr> &image, std::vecto
 
 class preComputedBins;
 
-/*////////////////////////////////////////////////////////////////////////////*/
-//VPARTICLETRACKER
-/*////////////////////////////////////////////////////////////////////////////*/
-class vParticle
-{
-private:
-
-    double minlikelihood;
-    double inlierParameter;
-    double outlierParameter;
-    double variance;
-
-    //id
-    int id;
-
-    //weight
-    double weight;
-    double likelihood;
-    int    outlierCount;
-    int    inlierCount;
-    double maxtw;
-    int angbuckets;
-    yarp::sig::Vector angdist;
-    yarp::sig::Vector negdist;
-    preComputedBins *pcb;
-
-
-    //state - this should be a yarp::sig::vector
-    double x;
-    double y;
-    double r;
-    double tw;
-
-    //timing
-    unsigned long int stamp;
-    unsigned long int nextUpdate;
-    unsigned int fixedrate;
-
-public:
-
-    vParticle();
-
-    void setid(int id) { this->id = id; }
-    int getid() { return id; }
-
-    void initState(double x, double y, double r,
-                   double vx, double vy, double vr);
-    void initState(double x, double y, double r, double tw);
-
-
-    void initTiming(unsigned long int stamp);
-    void initWeight(double weight);
-
-    unsigned int getTemporalWindow();
-
-    void setPCB(preComputedBins *pcb) { this->pcb = pcb; }
-
-    void setRate(unsigned int rate) { fixedrate = rate; }
-    void setMinLikelihood(double minlikelihood) { this->minlikelihood = minlikelihood; }
-    void setOutlierParameter(double value) { this->outlierParameter = value; }
-    void setInlierParameter(double value) {this->inlierParameter = value; }
-    void setVariance(double value) { this->variance = value; }
-
-    void resample(double w, unsigned long int t, int x, int y, int r, int tw);
-    void resample(const vParticle &seeder, double w, unsigned long int t);
-
-
-    bool predict(unsigned long int stamp);
-    double calcLikelihood(ev::vQueue &events, int nparticles);
-    void initLikelihood();
-    int incrementalLikelihood(int vx, int vy, int dt);
-    void concludeLikelihood();
-
-
-    void updateWeight(double l, double n);
-    void updateWeight2(double likelihood, double pwsumsq);
-    void updateWeightSync(double normval);
-
-    double dtavg;
-    double dtvar;
-
-    double getx() { return x; }
-    double gety() { return y; }
-    double getr() { return r; }
-    double getw() { return weight; }
-    double getl() { return likelihood; }
-    double gettw() { return tw; }
-    unsigned long getUpdateTime() { return nextUpdate; }
-    unsigned long getStamp() { return stamp; }
-    void setr(double value) { this->r = value; }
-    bool needsUpdating(unsigned long int stamp);
-
-    bool operator<(const vParticle &p) const
-        { return this->nextUpdate > p.nextUpdate; }
-    bool operator>(const vParticle &p) const
-        { return this->nextUpdate < p.nextUpdate; }
-
-};
 
 class preComputedBins
 {
@@ -159,7 +61,7 @@ public:
         }
     }
 
-    double queryDistance(int dy, int dx)
+    inline double queryDistance(int dy, int dx)
     {
         dy += offsety; dx += offsetx;
 //        if(dy < 0 || dy > rows || dx < 0 || dx > cols) {
@@ -169,7 +71,7 @@ public:
         return ds(dy, dx);
     }
 
-    int queryBinNumber(double dy, double dx)
+    inline int queryBinNumber(double dy, double dx)
     {
         dy += offsety; dx += offsetx;
 //        if(dy < 0 || dy > rows || dx < 0 || dx > cols) {
@@ -182,6 +84,194 @@ public:
 
 
 };
+
+/*////////////////////////////////////////////////////////////////////////////*/
+//VPARTICLETRACKER
+/*////////////////////////////////////////////////////////////////////////////*/
+class vParticle
+{
+private:
+
+    //static parameters
+    int id;
+    double minlikelihood;
+    double inlierParameter;
+    double outlierParameter;
+    double variance;
+    int angbuckets;
+    preComputedBins *pcb;
+    double negscaler;
+
+    bool constrain;
+    int minx, maxx;
+    int miny, maxy;
+    int minr, maxr;
+
+    //temporary parameters (on update cycle)
+    double likelihood;
+
+    double predlike;
+    int    outlierCount;
+    int    inlierCount;
+    double maxtw;
+    yarp::sig::Vector angdist;
+    yarp::sig::Vector negdist;
+
+    //state and weight
+    double x;
+    double y;
+    double r;
+    double tw;
+    double weight;
+
+    //timing
+    unsigned long int stamp;
+
+public:
+
+    int score;
+
+
+    vParticle();
+    vParticle& operator=(const vParticle &rhs);
+
+    //initialise etc.
+    void initialiseParameters(int id, double minLikelihood, double outlierParam, double inlierParam, double variance, int angbuckets);
+    void attachPCB(preComputedBins *pcb) { this->pcb = pcb; }
+
+    void initialiseState(double x, double y, double r, double tw);
+    void randomise(int x, int y, int r, int tw);
+
+    void resetStamp(unsigned long int value);
+    void resetWeight(double value);
+    void resetRadius(double value);
+    void resetArea();
+    void setContraints(int minx, int maxx, int miny, int maxy, int minr, int maxr);
+    void checkConstraints();
+
+
+    //update
+    void predict(unsigned long int stamp);
+    double approxatan2(double y, double x);
+
+    void initLikelihood()
+    {
+        likelihood = minlikelihood;
+        inlierCount = 0;
+        outlierCount = 0;
+        angdist.zero();
+        maxtw = 0;
+        score = 0;
+        resetArea();
+    }
+
+    inline void incrementalLikelihood(int vx, int vy, int dt)
+    {
+        double dx = vx - x;
+        double dy = vy - y;
+
+        double sqrd = pcb->queryDistance((int)dy, (int)dx) - r;
+        //double sqrd = sqrt(pow(dx, 2.0) + pow(dy, 2.0)) - r;
+
+        if(sqrd > inlierParameter) return;
+
+        if(sqrd > -inlierParameter) {
+            //int a = 0.5 + (angbuckets-1) * (atan2(dy, dx) + M_PI) / (2.0 * M_PI);
+
+            int a = pcb->queryBinNumber((int)dy, (int)dx);
+
+            if(!angdist[a]) {
+                inlierCount++;
+                //angdist[a] = dt + 1;
+                angdist[a] = 1;
+
+                score = inlierCount - negscaler * outlierCount;
+                if(score >= likelihood) {
+                    likelihood = score;
+                    maxtw = dt;
+                }
+
+            }
+
+        } else {
+            outlierCount++;
+        }
+
+    }
+
+    void concludeLikelihood()
+    {
+        if(likelihood > minlikelihood) tw = maxtw;
+        weight = likelihood * weight;
+    }
+
+    void updateWeightSync(double normval);
+
+    //get
+    inline int    getid() { return id; }
+    inline double getx()  { return x; }
+    inline double gety()  { return y; }
+    inline double getr()  { return r; }
+    inline double getw()  { return weight; }
+    inline double getl()  { return likelihood; }
+    inline double gettw() { return tw; }
+
+
+};
+
+/*////////////////////////////////////////////////////////////////////////////*/
+//VPARTICLEFILTER
+/*////////////////////////////////////////////////////////////////////////////*/
+
+class vParticlefilter
+{
+private:
+
+    //parameters
+    int nparticles;
+    int nthreads;
+    int sigma;
+    ev::resolution res;
+    bool adaptive;
+    int bins;
+    int maxtoproc;
+    int seedx, seedy, seedr;
+    double nRandoms;
+
+    //data
+    std::vector<vParticle> ps;
+    std::vector<vParticle> ps_snap;
+    std::vector<double> accum_dist;
+    preComputedBins pcb;
+
+    //variables
+    double pwsumsq;
+    int rbound_min;
+    int rbound_max;
+    double maxlikelihood;
+
+
+public:
+
+    vParticlefilter() {}
+    ~vParticlefilter() {}
+
+
+    void initialise(int width, int height, int nparticles, double sigma,
+                    int bins, bool adaptive, int nthreads, int maxtoproc,
+                    double minlikelihood, double inlierThresh, double randoms);
+
+    void setSeed(int x, int y, int r = 0);
+    void resetToSeed();
+    bool inbounds(vParticle &p);
+
+    void performObservation(const vQueue &q);
+    void extractTargetPosition(double &x, double &y, double &r);
+    void performResample();
+    void performPrediction();
+
+};
+
 
 
 #endif

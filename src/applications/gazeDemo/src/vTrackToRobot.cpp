@@ -22,523 +22,27 @@
 using namespace yarp::math;
 using namespace ev;
 
-/*//////////////////////////////////////////////////////////////////////////////
-  VBOTTLE READER/PROCESSOR
-  ////////////////////////////////////////////////////////////////////////////*/
-
-vTrackToRobotManager::vTrackToRobotManager()
+int main(int argc, char * argv[])
 {
+    /* initialize yarp network */
+    yarp::os::Network yarp;
+    if(!yarp.checkNetwork()) {
+        yError() << "Could not connect to yarp";
+        return -1;
+    }
 
-    method = fromgaze;
-    demo = gazedemo;
-    gazecontrol = 0;
-    p_eyez = 0.5;
-    gazingActive = true;
-    //inital gaze
-    xrobref.resize(3);
-    xrobref[0]=-0.4; //x = -0.4 (distance infront -ive)
-    xrobref[1]=0; //y = 0 (left-right)
-    xrobref[2]=0.3; //z = 0.3 (up/down)
-    px.resize(2);
-    medx = 64;
-    medy = 64;
-    px[0] = medy;
-    px[1] = 127 - medx;
-    lastdogazetime = 0;
+    /* prepare and configure the resource finder */
+    yarp::os::ResourceFinder rf;
+    rf.setDefaultContext( "eventdriven" );
+    rf.setDefaultConfigFile( "vGazeDemo.ini" );
+    rf.configure( argc, argv );
 
-    FIFO = ev::temporalSurface(340, 340);
-    FIFO.setTemporalSize(250000 * 7.8125);
+    /* create the module */
+    vTrackToRobotModule module;
 
+    /* run the module: runModule() calls configure first and, if successful, it then runs */
+    return module.runModule(rf);
 }
-
-void vTrackToRobotManager::setMethod(std::string methodname)
-{
-    if(methodname == "gaze") method = fromgaze;
-    if(methodname == "size") method = fromsize;
-    if(methodname == "stereo") method = fromstereo;
-}
-
-void vTrackToRobotManager::setDemo(std::string demoname)
-{
-    if(demoname == "gaze") demo = gazedemo;
-    if(demoname == "grasp") demo = graspdemo;
-
-}
-
-/******************************************************************************/
-bool vTrackToRobotManager::open(const std::string &name)
-{
-    //and open the input port
-
-    this->useCallback();
-
-    std::string vInPortName = "/" + name + "/vBottle:i";
-    if(!yarp::os::BufferedPort<ev::vBottle>::open(vInPortName)) {
-        std::cerr << "Could not open: " << vInPortName << std::endl;
-        return false;
-    }
-    std::string vOutPortName = "/" + name + "/vBottle:o";
-    if(!eventsOutPort.open(vOutPortName)) {
-        std::cerr << "Could not open: " << vOutPortName << std::endl;
-        return false;
-    }
-
-    std::string cartPortName = "/" + name + "/vCartOut:o";
-    if(!cartOutPort.open(cartPortName)) {
-        std::cerr << "Could not open: " << cartPortName << std::endl;
-        return false;
-    }
-
-    std::string scopePortName = "/" + name + "/scope:o";
-    if(!scopeOutPort.open(scopePortName)) {
-        std::cerr << "Could not open: " << scopePortName << std::endl;
-        return false;
-    }
-
-    std::string positionPortName = "/" + name + "/posdump:o";
-    if(!positionOutPort.open(positionPortName)) {
-        std::cerr << "Could not open: " << positionPortName << std::endl;
-        return false;
-    }
-
-
-    //if(method != fromgaze) return true;
-
-    yarp::os::Property options;
-    options.put("device", "gazecontrollerclient");
-    options.put("local", "/" + name);
-    options.put("remote", "/iKinGazeCtrl");
-    gazedriver.open(options);
-    if(gazedriver.isValid())
-        gazedriver.view(gazecontrol);
-    else
-        std::cerr << "Gaze Driver not opened and will not be used" << std::endl;
-
-    return true;
-}
-
-void vTrackToRobotManager::interrupt()
-{
-    std::cout << "Interrupting Manager" << std::endl;
-    eventsOutPort.interrupt();
-    cartOutPort.interrupt();
-    scopeOutPort.interrupt();
-    positionOutPort.interrupt();
-    yarp::os::BufferedPort<ev::vBottle>::interrupt();
-    std::cout << "Interrupted Manager" << std::endl;
-}
-
-void vTrackToRobotManager::close()
-{
-    std::cout << "Closing Event Manager" << std::endl;
-
-    if(gazedriver.isValid()) {
-        gazecontrol->stopControl();
-        gazedriver.close();
-    }
-    eventsOutPort.close();
-    cartOutPort.close();
-    scopeOutPort.close();
-    positionOutPort.close();
-    yarp::os::BufferedPort<ev::vBottle>::close();
-
-    std::cout << "Closed Event Manager" << std::endl;
-
-}
-
-/******************************************************************************/
-void vTrackToRobotManager::onRead(ev::vBottle &vBottleIn)
-{
-
-    yarp::os::Stamp st;
-    this->getEnvelope(st);
-
-    //we just need to get our updated TS
-    ev::vQueue q = vBottleIn.getAllSorted();
-    if(q.empty()) return;
-    int bestts = q.back()->stamp;
-    FIFO.removeEvents(q.back());
-
-    //get the events and see if we can get a ball observation
-    //q = vBottleIn.getSorted<ev::ClusterEventGauss>();
-    q = vBottleIn.get<GaussianAE>();
-
-    bool dogaze;
-    if(yarp::os::Time::now() > lastdogazetime + 3)
-        dogaze = false;
-    else
-        dogaze = true;
-
-    if(q.size()) {
-
-        auto vc = is_event<GaussianAE>(q.back());
-
-        //get the stamp
-        bestts = vc->stamp;
-
-        //get radius
-        //p_eyez = (-2.5 * vc->getXSigma2() + 70)/100.0;
-        p_eyez = vc->sigxy;
-        //p_eyez = std::min(p_eyez, 16.0);
-
-        //update our window
-//        ev::event<ev::AddressEvent> v = ev::event<ev::AddressEvent>(new ev::AddressEvent());
-//        v->setChannel(vc->getChannel());
-//        v->setPolarity(vc->getChannel());
-//        v->setX(vc->getXCog());
-//        v->setY(vc->getYCog());
-//        FIFO.addEvent(v);
-
-//        //and then get everything in the current window
-//        q = FIFO.getSurf();
-//        n = q.size();
-
-//        //compute the median
-//        std::vector<int> xs, ys;
-//        xs.resize(n); ys.resize(n);
-//        for(int i = 0; i < n; i++) {
-//            ev::event<ev::AddressEvent> vtw = ev::as_event<ev::AddressEvent>(q[i]);
-//            xs[i] = 303 - vtw->x;
-//            ys[i] = 239 - vtw->y;
-//            //p_eyez = std::max(p_eyez, (double)vtw->getXSigma2());
-//            //p_eyez = std::min(p_eyez, 16.0);
-//        }
-
-//        std::sort(xs.begin(), xs.end());
-//        std::sort(ys.begin(), ys.end());
-
-//        medx = xs[n / 2];
-//        medy = ys[n / 2];
-
-        //do error check for too much noise
-//        double medstdx = 0, medstdy = 0;
-//        for(int i = 0; i < n; i++) {
-//            medstdx += pow(xs[i] - medx, 2.0);
-//            medstdy += pow(ys[i] - medy, 2.0);
-//        }
-//        medstdx = sqrt(medstdx / n);
-//        medstdy = sqrt(medstdy / n);
-
-        //if(std::abs(vc->getXCog() - medx) < medstdx && std::abs(vc->getYCog() - medy) < medstdy) {
-            //std::cout << "current observation within 1 std" << std::endl;
-            //std::cout << medstdx << " " << medstdy << " " << n << std::endl;
-            //if(medstdx < 10 && medstdy < 10 && n > 5) {
-                dogaze = true;
-                lastdogazetime = yarp::os::Time::now();
-                px[0] = 303 - vc->x;
-                px[1] = 239 - vc->y;
-                //turn u/v into xyz
-                if(gazedriver.isValid()) {
-                    //gazecontrol->get3DPoint(0, px, (-2.4 * p_eyez + 70)/100.0, xrobref);
-                    double zpos = -0.02 * p_eyez + 0.8;
-                    zpos = std::min(zpos, 0.5);
-                    zpos = std::max(zpos, 0.3);
-
-                    gazecontrol->get3DPoint(1, px, zpos, xrobref);
-                    std::cout << px.toString() << " " << xrobref.toString() << std::endl;
-                }
-            //}
-        //}
-
-    }
-
-
-    //DO GAZE
-    //find the median position in xyz space and gaze there
-    //yarp::sig::Vector px(2);        //pixel in uv
-    //yarp::sig::Vector x(3); x = 0;  //position in xyz (iCub ref frame)
-    //px[0] = medy;
-    //px[1] = 127 - medx;
-    if(gazedriver.isValid() && dogaze) {
-
-        //if we use the gaze controller to gaze then go ahead
-        if(demo == gazedemo && gazingActive)
-            gazecontrol->lookAtFixationPoint(xrobref);
-    }
-
-    if(gazedriver.isValid() && dogaze && demo == graspdemo && gazingActive) {
-    //if(gazedriver.isValid() && demo == graspdemo && gazingActive) {
-
-        //this is the eye pose
-        yarp::sig::Vector xeye,oeye;
-        gazecontrol->getLeftEyePose(xeye,oeye);
-
-        //this does the transformation
-        yarp::sig::Matrix T=yarp::math::axis2dcm(oeye);
-        T(0,3)=xeye[0];
-        T(1,3)=xeye[1];
-        T(2,3)=xeye[2];
-        //std::cout << "initial rotation matrix" << std::endl;
-        //std::cout << T.toString() << std::endl;
-
-        //std::cout << "initial translations" << std::endl;
-        //std::cout << xeye.toString() << std::endl;
-
-        yarp::sig::Matrix Ti = yarp::math::SE3inv(T);
-        //std::cout << "inverted rotation matrix" << std::endl;
-        //std::cout << Ti.toString() << std::endl;
-
-
-        //this was the target in eye coordinates
-        yarp::sig::Vector fp(4);
-        fp[0]=xrobref[0];
-        fp[1]=xrobref[1];
-        fp[2]=xrobref[2];
-        fp[3]=1.0;
-
-        //std::cout << "Multiplied by" << std::endl;
-        //std::cout << fp.toString() << std::endl;
-
-
-        yarp::sig::Vector tp=Ti*fp;
-        //std::cout << "Equals:" << std::endl;
-        //std::cout << tp.toString() << std::endl;
-        if(cartOutPort.getOutputCount()) {
-            yarp::os::Bottle &cartcoords = cartOutPort.prepare();
-            cartcoords.clear();
-            //    //add the XYZ position
-            cartcoords.add(tp[0]); cartcoords.add(tp[1]); cartcoords.add(tp[2]);
-            //cartcoords.add(-1.0); cartcoords.add(0.0); cartcoords.add(-0.3);
-            //    //add some buffer ints
-            cartcoords.add(0.5); cartcoords.add(px[0]); cartcoords.add(px[1]);
-            //    //flag that the object is detected
-            cartcoords.add(1.0);
-
-            //std::cout << "Bottle: " << cartcoords.toString() << std::endl;
-            //targetPos in the eye reference frame
-            //std::cout << "2D point: " << px.toString() << std::endl;
-            //std::cout << "3D point: " << x.toString() << std::endl;
-            cartOutPort.write();
-        }
-
-    }
-
-
-    //DUMP POSITIONS
-    //find the position of the eyes in the current position
-    yarp::sig::Vector cpx(2); cpx[0] = 64; cpx[1] = 64;
-    yarp::sig::Vector cx(3); cx = 0;  //position in xyz (eye ref frame)
-    if(gazedriver.isValid()) {
-        gazecontrol->get3DPoint(0, cpx, (-2.4 * p_eyez + 70)/100.0, cx);
-    }
-    if(positionOutPort.getOutputCount()) {
-        yarp::os::Bottle &posdump = positionOutPort.prepare();
-        posdump.clear();
-        posdump.addInt(bestts);
-        posdump.addDouble(cx[0]); posdump.addDouble(cx[1]); posdump.addDouble(cx[2]);
-        posdump.addDouble(xrobref[0]); posdump.addDouble(xrobref[1]); posdump.addDouble(xrobref[2]);
-        positionOutPort.setEnvelope(st);
-        positionOutPort.write();
-    }
-
-
-    //PASS THROUGH EVENTS
-    if(eventsOutPort.getOutputCount()) {
-        //add all the address and flow events
-        ev::vBottle &vBottleOut = eventsOutPort.prepare();
-        vBottleOut = vBottleIn;
-
-        //add the gaze point event
-        if(dogaze) {
-            auto circevent = make_event<GaussianAE>();
-            circevent->stamp = bestts;
-            circevent->setChannel(0);
-            circevent->x = (int)medx;
-            circevent->y = (int)medy;
-            circevent->sigx = (int)p_eyez;
-            circevent->sigy = 1;
-            circevent->ID = 1;
-            vBottleOut.addEvent(circevent);
-
-        }
-
-        //write the output
-        eventsOutPort.setEnvelope(st);
-        eventsOutPort.write();
-    }
-
-
-
-
-
-    return;
-
-}
-//void vTrackToRobotManager::onRead(eventdriven::vBottle &vBottleIn)
-//{
-
-//    //always print current position
-//    yarp::sig::Vector cpx(2), cx(3);
-//    cpx(0) = 64; cpx(1) = 64;
-//    gazecontrol->get3DPoint(0, cpx, p_eyez, cx);
-
-//    //get the events and see if we can get a ball observation
-//    yarp::sig::Vector px(2), x(3); x = 0;
-//    eventdriven::vQueue q = vBottleIn.getSorted<eventdriven::ClusterEventGauss>();
-//    eventdriven::vQueue qforts = vBottleIn.getAll();
-//    qforts.wrapSort();
-
-
-//    if(q.size()) {
-
-//        eventdriven::ClusterEventGauss * v =
-//                q.back()->getAs<eventdriven::ClusterEventGauss>();
-
-//        px[0] += v->getYCog();
-//        px[1] += (127 - v->getXCog());
-//        double eyez = (-2.5 * v->getXSigma2() + 70)/100.0;
-
-//        recentgazelocs.push_back(px);
-//        recenteyezs.push_back(eyez);
-
-//        if(recentgazelocs.size() > 20) {
-//            recentgazelocs.pop_front();
-//            recenteyezs.pop_front();
-
-//            double eyez_mean = 0;
-//            for(int i = 1; i < recenteyezs.size(); i++)
-//                eyez_mean += recenteyezs[i];
-//            eyez_mean /= recenteyezs.size();
-
-//            double x_mean = 0, y_mean = 0;
-//            for(int i = 1; i < recentgazelocs.size(); i++) {
-//                x_mean += recentgazelocs[i][0];
-//                y_mean += recentgazelocs[i][1];
-//            }
-//            x_mean /= recentgazelocs.size();
-//            y_mean /= recentgazelocs.size();
-
-//            bool gaze = false;
-//            if(x_mean - px[0] < 5 && y_mean - px[1] < 5)
-//                gaze = true;
-
-
-//            if(gaze) {
-
-//                //turn u/v into xyz
-//                gazecontrol->get3DPoint(0, px, eyez_mean, x);
-//                p_eyez = eyez_mean;
-//                //std::cout << eyez_mean << std::endl;
-
-//                //and look there
-//                //std::cout << x[0] << " " << x[1] << " " << x[2] << std::endl;
-//                if(gazingActive)
-//                    gazecontrol->lookAtFixationPoint(x);
-//            }
-
-
-//        }
-
-//    }
-
-//    if(positionOutPort.getOutputCount()) {
-//        yarp::os::Bottle &posdump = positionOutPort.prepare();
-//        posdump.clear();
-//        posdump.addInt(qforts.front()->stamp);
-//        posdump.addDouble(cx[0]); posdump.addDouble(cx[1]); posdump.addDouble(cx[2]);
-//        posdump.addDouble(x[0]); posdump.addDouble(x[1]); posdump.addDouble(x[2]);
-//        yarp::os::Stamp st; this->getEnvelope(st);
-//        positionOutPort.setEnvelope(st);
-//        positionOutPort.write();
-//    }
-
-//    return;
-
-
-//    //this is the eye pose
-//    yarp::sig::Vector xeye,oeye;
-//    gazecontrol->getLeftEyePose(xeye,oeye);
-
-//    //this does the transformation
-//    yarp::sig::Matrix T=yarp::math::axis2dcm(oeye);
-//    T(0,3)=xeye[0];
-//    T(1,3)=xeye[1];
-//    T(2,3)=xeye[2];
-//    std::cout << "initial rotation matrix" << std::endl;
-//    std::cout << T.toString() << std::endl;
-
-//    std::cout << "initial translations" << std::endl;
-//    std::cout << xeye.toString() << std::endl;
-
-//    yarp::sig::Matrix Ti = yarp::math::SE3inv(T);
-//    std::cout << "inverted rotation matrix" << std::endl;
-//    std::cout << Ti.toString() << std::endl;
-
-
-//    //this was the target in eye coordinates
-//    yarp::sig::Vector fp(4);
-//    fp[0]=x[0];
-//    fp[1]=x[1];
-//    fp[2]=x[2];
-//    fp[3]=1.0;
-
-//    std::cout << "Multiplied by" << std::endl;
-//    std::cout << fp.toString() << std::endl;
-
-
-
-
-//    yarp::sig::Vector tp=Ti*fp;
-//    std::cout << "Equals:" << std::endl;
-//    std::cout << tp.toString() << std::endl;
-
-//    //targetPos in the eye reference frame
-//    //std::cout << "2D point: " << px.toString() << std::endl;
-//    //std::cout << "3D point: " << x.toString() << std::endl;
-
-
-
-
-
-////    if(!scopeOutPort.getOutputCount()) return;
-////    yarp::os::Bottle &scopeBot = scopeOutPort.prepare();
-////    scopeBot.clear();
-////    scopeBot.addDouble(x[0]); scopeBot.addDouble(x[1]); scopeBot.addDouble(x[2]);
-////    scopeBot.addDouble(px[0]); scopeBot.addDouble(px[1]);
-////    scopeOutPort.write();
-
-//    //do some sanity checks on the xyz position so we don't break the robot (again)
-//    bool error = false;
-//    if(tp[0] < -0.3 || tp[0] > 0.3) error = true;
-//    if(tp[1] < -0.3 || tp[1] > 0.3) error = true;
-//    if(tp[2] < 0.49 || tp[2] > 0.51) error = true;
-
-//    if(error) {
-//        std::cout << "ERROR: position " << tp.toString() << std::endl;
-//        return;
-//    }
-
-//    //return;
-
-
-////    yarp::sig::Vector x,o;
-////    gazecontrol->getLeftEyePose(x,o);
-
-////    Matrix T=yarp::sig::axis2dcm(o);
-////    T(0,3)=x[0];
-////    T(1,3)=x[1];
-////    T(2,3)=x[2];
-
-////    targetPos=T*fp;
-
-
-//    yarp::os::Bottle& BottleOut = cartOutPort.prepare();
-//    BottleOut.clear();
-//    //add the XYZ position
-//    BottleOut.add(tp[0]); BottleOut.add(tp[1]); BottleOut.add(tp[2]);
-//    //BottleOut.add(-1.0); BottleOut.add(0.0); BottleOut.add(-0.3);
-//    //add some buffer ints
-//    BottleOut.add(0.5); BottleOut.add(px[0]); BottleOut.add(px[1]);
-//    //flag that the object is detected
-//    BottleOut.add(1.0);
-
-//    //std::cout << "Bottle: " << BottleOut.toString() << std::endl;
-
-//    cartOutPort.write();
-
-//    //send some data for the scope if one is connected
-
-//}
 
 
 /*//////////////////////////////////////////////////////////////////////////////
@@ -548,56 +52,344 @@ void vTrackToRobotManager::onRead(ev::vBottle &vBottleIn)
 bool vTrackToRobotModule::configure(yarp::os::ResourceFinder &rf)
 {
     //set the name of the module
-    std::string moduleName =
-            rf.check("name", yarp::os::Value("vTrackToRobot")).asString();
-    setName(moduleName.c_str());
+    setName((rf.check("name", yarp::os::Value("/vGazeDemo")).asString()).c_str());
+    yThresh = rf.check("yThresh", yarp::os::Value(20)).asDouble();
+    rThresh = rf.check("rThresh", yarp::os::Value(5)).asDouble();
+    period = rf.check("period", yarp::os::Value(0.01)).asDouble();
+    gazingActive = rf.check("start", yarp::os::Value(false)).asBool();
+    useDemoRedBall = rf.check("grasp", yarp::os::Value(false)).asBool();
+    velocityControl = rf.check("velocity", yarp::os::Value(false)).asBool();
+    res.height = rf.check("height", yarp::os::Value(240)).asDouble();
+    res.width = rf.check("width", yarp::os::Value(304)).asDouble();
+    usearm = rf.check("arm") && rf.check("arm", yarp::os::Value(true)).asBool();
 
-    std::string method =
-            rf.check("method", yarp::os::Value("gaze")).asString();
-
-    std::string rpcportname = "/" + moduleName + "/control";
-    if(!rpcPort.open(rpcportname)) {
-        std::cerr << "Could not open RPC port" << std::endl;
-    }
+    if(!rpcPort.open(getName() + "/control"))
+        return false;
     this->attach(rpcPort);
 
-    vTrackToRobot.setDemo(rf.check("demo", yarp::os::Value("gaze")).asString());
+    //inputPort.setDemo(rf.check("demo", yarp::os::Value("gaze")).asString());
 
-    vTrackToRobot.setMethod(method);
-    if(!vTrackToRobot.open(moduleName)) {
-        std::cerr << "Could Not Open vTrackToRobotModule" << std::endl;
+    if(!inputPort.open(getName() + "/vBottle:i"))
         return false;
+
+    if(!cartOutPort.open(getName() + "/cart:o"))
+        return false;
+
+    yarp::os::Property options;
+    options.put("device", "gazecontrollerclient");
+    options.put("local", getName());
+    options.put("remote", "/iKinGazeCtrl");
+    gazedriver.open(options);
+    if(gazedriver.isValid()) {
+        gazedriver.view(gazecontrol);
+        gazecontrol->getHeadPose(headhomepos, headhomerot);
+    } else {
+        yWarning() << "Gaze Driver not opened and will not be used";
     }
+
+    options.put("device","cartesiancontrollerclient");
+    // left arm
+    options.put("remote","/icub/cartesianController/left_arm");
+    options.put("local","/cartesian_client/left_arm");
+    //right arm
+//    options.put("remote","/icub/cartesianController/right_arm");
+//    options.put("local","/cartesian_client/right_arm");
+
+    if(usearm) armdriver.open(options);
+    if(armdriver.isValid()) {
+        armdriver.view(arm);
+        arm->storeContext(&startup_context_id);
+        arm->setTrajTime(1.5);
+        // get the torso dofs
+        yarp::sig::Vector newDof, curDof;
+        arm->getDOF(curDof);
+        newDof=curDof;
+
+        // enable the torso yaw and pitch
+        // disable the torso roll
+        newDof[0]=0;
+        newDof[1]=0;
+        newDof[2]=0;
+        arm->setDOF(newDof,curDof);
+
+        double min, max;
+        // we keep the lower limit
+        arm->getLimits(0,&min,&max);
+        arm->setLimits(0,min,30.0);
+
+        arm->getPose(armhomepos, armhomerot);
+
+    } else
+        yWarning() << "Arm driver not opened and will not be used";
+
+    if(velocityControl) {
+        yInfo() << "Velocity control in visual space";
+        if(!velocityController.initialise(res.height, res.width))
+            return false;
+    } else {
+        yInfo() << "Position-based cartesian control";
+    }
+
 
     return true ;
 }
 
-/******************************************************************************/
-bool vTrackToRobotModule::interruptModule()
+bool vTrackToRobotModule::controlCartesian(yarp::sig::Vector ltarget,
+                                           yarp::sig::Vector rtarget)
 {
-    vTrackToRobot.interrupt();
-    yarp::os::RFModule::interruptModule();
+    //check target is present
+    if(!rtarget[3] || !ltarget[3])
+        return false;
+
+    //do our stereo target check
+    if(std::abs(rtarget[1] - ltarget[1]) > yThresh) {
+        //yWarning() << "Y values not consistent for target";
+        return false;
+    }
+    if(std::abs(rtarget[2] - ltarget[2]) > rThresh) {
+        //yWarning() << "Radius not consistent for target";
+        return false;
+    }
+
+    if(!gazingActive || !gazedriver.isValid()) {
+        //yInfo() << "Gaze valid (gazing blocked)";
+        return false;
+    }
+
+    yarp::sig::Vector pleft = ltarget.subVector(0, 1);
+    yarp::sig::Vector pright = rtarget.subVector(0, 1);
+
+    yarp::sig::Vector tp;
+    gazecontrol->triangulate3DPoint(pleft, pright, tp);
+
+    //target too close to body?
+    if(tp[0] > -0.10) {
+        return false;
+    }
+
+    gazecontrol->lookAtStereoPixels(pleft, pright);
+
+    return true;
+
+}
+
+bool vTrackToRobotModule::controlArm(yarp::sig::Vector ltarget,
+                                     yarp::sig::Vector rtarget)
+{
+    //check target is present
+    if(!rtarget[3] || !ltarget[3])
+        return false;
+
+    //do our stereo target check
+    if(std::abs(rtarget[1] - ltarget[1]) > yThresh) {
+        //yWarning() << "Y values not consistent for target";
+        return false;
+    }
+    if(std::abs(rtarget[2] - ltarget[2]) > rThresh) {
+        //yWarning() << "Radius not consistent for target";
+        return false;
+    }
+
+    if(!gazingActive || !gazedriver.isValid()) {
+        //yInfo() << "Gaze valid (gazing blocked)";
+        return false;
+    }
+
+    if(!armdriver.isValid())
+        return false;
+
+    yarp::sig::Vector pleft = ltarget.subVector(0, 1);
+    yarp::sig::Vector pright = rtarget.subVector(0, 1);
+
+    yarp::sig::Vector tp;
+    gazecontrol->triangulate3DPoint(pleft, pright, tp);
+
+    //target too close to body
+    if(tp[0] > -0.10) {
+        return false;
+    }
+
+    tp[1] += -0.15;
+    //tp[2] += -0.10;
+
+    //tp[0] = std::max(tp[0], -0.15);
+    tp[0] = std::min(tp[0], -0.20);
+    tp[0] = std::max(tp[0], -0.30);
+    //tp[1] = std::max(tp[1], -0.6);
+    tp[1] = std::min(tp[1],  0.10);
+    //tp[2] = std::max(tp[2],  0.0); tp[2] = std::min(tp[2],  0.6);
+
+    yarp::sig::Vector od(4);
+    yarp::sig::Matrix handor(3, 3); handor.zero();
+    handor(0, 0) = -1.0; //hand x axis = - robot x axis (point forward)
+    handor(2, 1) = -1.0;
+    handor(1, 2) = 1.0;
+
+    od = dcm2axis(handor);
+
+    arm->goToPose(tp,od);
+    //yInfo() << "Arm Controlled";
+
+}
+
+bool vTrackToRobotModule::controlVelocity(yarp::sig::Vector ltarget,
+                                          yarp::sig::Vector rtarget)
+{
+    static double trecord = yarp::os::Time::now();
+    double dt = yarp::os::Time::now() - trecord;
+    trecord += dt;
+
+//    //check target is present
+//    if(!rtarget[3] || !ltarget[3]) {
+//        velocityController.controlReset();
+//        return false;
+//    }
+
+//    bool sameY = std::abs(rtarget[1] - ltarget[1]) < yThresh;
+//    bool sameR = std::abs(rtarget[2] - ltarget[2]) < rThresh;
+//    if(!sameY || !sameR) {
+//        velocityController.controlReset();
+//        return false;
+//    }
+
+//    velocityController.controlStereo(ltarget[0], ltarget[1], rtarget[0],
+//            rtarget[1], dt);
+
+
+
+    if(ltarget[3]) {
+        bool sameY = std::abs(rtarget[1] - ltarget[1]) < yThresh;
+        bool sameR = std::abs(rtarget[2] - ltarget[2]) < rThresh;
+        if(rtarget[3] && sameY && sameR)
+            velocityController.controlStereo(ltarget[0], ltarget[1], rtarget[0],
+                    rtarget[1], dt);
+        else
+            velocityController.controlMono(ltarget[0], ltarget[1], dt);
+    } else if(rtarget[3])
+        velocityController.controlMono(rtarget[0], rtarget[1], dt);
+    else {
+        velocityController.controlReset();
+        return false;
+    }
+
     return true;
 }
 
-/******************************************************************************/
-bool vTrackToRobotModule::close()
+bool vTrackToRobotModule::controlExternal(yarp::sig::Vector ltarget,
+                                          yarp::sig::Vector rtarget)
 {
-    vTrackToRobot.close();
-    yarp::os::RFModule::close();
-    return true;
+
+    //check target is present
+    if(!rtarget[3] || !ltarget[3])
+        return false;
+
+    //do our stereo target check
+    if(std::abs(rtarget[1] - ltarget[1]) > yThresh) {
+        //yWarning() << "Y values not consistent for target";
+        return false;
+    }
+    if(std::abs(rtarget[2] - ltarget[2]) > rThresh) {
+        //yWarning() << "Radius not consistent for target";
+        return false;
+    }
+
+    if(!gazingActive || !gazedriver.isValid()) {
+        //yInfo() << "Gaze valid (gazing blocked)";
+        return false;
+    }
+
+    if(!armdriver.isValid())
+        return false;
+
+    yarp::sig::Vector pleft = ltarget.subVector(0, 1);
+    yarp::sig::Vector pright = rtarget.subVector(0, 1);
+
+    yarp::sig::Vector xrobref, xeye, oeye;
+    gazecontrol->triangulate3DPoint(pleft, pright, xrobref);
+
+    //target too close to body?
+    if(xrobref[0] > -0.10) {
+        return false;
+    }
+
+    gazecontrol->getLeftEyePose(xeye,oeye); //in robot ref frame
+
+    //from eye -> torso
+    yarp::sig::Matrix T=yarp::math::axis2dcm(oeye);
+    T(0,3)=xeye[0];
+    T(1,3)=xeye[1];
+    T(2,3)=xeye[2];
+
+    //from torso -> eye
+    yarp::sig::Matrix Ti = yarp::math::SE3inv(T);
+
+    //this was the target in robot reference frame
+    yarp::sig::Vector fp(4);
+    fp[0]=xrobref[0];
+    fp[1]=xrobref[1];
+    fp[2]=xrobref[2];
+    fp[3]=1.0;
+
+    //convert point in robrf -> eyerf
+    yarp::sig::Vector tp=Ti*fp;
+
+    //send eye ref frame coordinates
+    if(cartOutPort.getOutputCount()) {
+        yarp::os::Bottle &cartcoords = cartOutPort.prepare();
+        cartcoords.clear();
+        //    //add the XYZ position
+        cartcoords.add(tp[0]); cartcoords.add(tp[1]); cartcoords.add(tp[2]);
+        //cartcoords.add(-1.0); cartcoords.add(0.0); cartcoords.add(-0.3);
+        //    //add some buffer ints
+        cartcoords.add(0.5); cartcoords.add(pleft[0]); cartcoords.add(pleft[1]);
+        //    //flag that the object is detected
+        cartcoords.add(1.0);
+
+        cartOutPort.write();
+    }
+
 }
 
-/******************************************************************************/
 bool vTrackToRobotModule::updateModule()
 {
-    return true;
+
+    //if we haven't gazed for some time reset robot position
+    static double htimeout = yarp::os::Time::now();
+    if(yarp::os::Time::now() - htimeout > 3.0) {
+        if(armdriver.isValid()) {
+            arm->goToPose(armhomepos, armhomerot);
+        }
+        htimeout = yarp::os::Time::now();
+    }
+
+    //get the targets from the input ports
+    yarp::sig::Vector leftTarget, rightTarget;
+    inputPort.getTargets(leftTarget, rightTarget);
+
+    //perform the type of control as specified
+    bool gazePerformed = false;
+    if(useDemoRedBall) {
+        controlExternal(leftTarget, rightTarget);
+        gazePerformed = true; //let the external function do all control
+    } else {
+        if(velocityControl)
+            gazePerformed = controlVelocity(leftTarget, rightTarget);
+        else
+            gazePerformed = controlCartesian(leftTarget, rightTarget);
+        if(usearm)
+            controlArm(leftTarget, rightTarget);
+    }
+
+    //reset the timeout if needed
+    if(gazePerformed)
+        htimeout = yarp::os::Time::now();
+
+    return !isStopping();
 }
 
-/******************************************************************************/
 double vTrackToRobotModule::getPeriod()
 {
-    return 1;
+    return period;
 }
 
 bool vTrackToRobotModule::respond(const yarp::os::Bottle &command,
@@ -607,10 +399,10 @@ bool vTrackToRobotModule::respond(const yarp::os::Bottle &command,
 
     if(command.get(0).asString() == "start") {
         reply.addString("starting");
-        this->vTrackToRobot.startGazing();
+        gazingActive = true;
     } else if(command.get(0).asString() == "stop") {
         reply.addString("stopping");
-        this->vTrackToRobot.stopGazing();
+        gazingActive = false;
     } else {
         return false;
     }
@@ -620,6 +412,34 @@ bool vTrackToRobotModule::respond(const yarp::os::Bottle &command,
 
 }
 
+bool vTrackToRobotModule::interruptModule()
+{
+
+    if(armdriver.isValid()) {
+        arm->goToPoseSync(armhomepos, armhomerot);
+        arm->waitMotionDone(1.0, 4.0);
+    }
+
+    inputPort.interrupt();
+    return yarp::os::RFModule::interruptModule();
+}
+
+bool vTrackToRobotModule::close()
+{
+
+    if(gazedriver.isValid()) {
+        gazecontrol->stopControl();
+        gazedriver.close();
+    }
+
+    if(armdriver.isValid()) {
+        arm->stopControl();
+        arm->restoreContext(startup_context_id);
+        armdriver.close();
+    }
 
 
-//empty line to make gcc happy
+    inputPort.close();
+    return yarp::os::RFModule::close();
+}
+

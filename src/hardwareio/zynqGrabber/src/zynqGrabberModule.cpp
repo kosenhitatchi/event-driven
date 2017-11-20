@@ -20,6 +20,8 @@
  */
 
 #include <zynqGrabberModule.h>
+#include <fstream>
+#include <ctime>
 
 int main(int argc, char * argv[])
 {
@@ -44,11 +46,21 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
 
     std::string moduleName = rf.check("name", yarp::os::Value("/zynqGrabber")).asString();
     setName(moduleName.c_str());
-    bool strict = rf.check("strict") && rf.check("strict", yarp::os::Value(true)).asBool();
     bool errorcheck = rf.check("errorcheck") && rf.check("errorcheck", yarp::os::Value(true)).asBool();
     bool verbose = rf.check("verbose") && rf.check("verbose", yarp::os::Value(true)).asBool();
     bool biaswrite = rf.check("biaswrite") && rf.check("biaswrite", yarp::os::Value(true)).asBool();
     bool jumpcheck = rf.check("jumpcheck") && rf.check("jumpcheck", yarp::os::Value(true)).asBool();
+    bool iBias = rf.check("iBias") && rf.check("iBias", yarp::os::Value(true)).asBool();
+    std::string logfile = rf.check("logfile", yarp::os::Value("/home/icub/zynqGrabberlog.txt")).asString();
+
+    time_t t = std::time(0);   // get date now
+    struct tm * curdate = std::localtime(&t);
+    std::ofstream logwriter;
+    logwriter.open(logfile.c_str(), std::ios_base::app);
+    bool lwo = logwriter.is_open();
+    if(lwo) logwriter << "ZYNQGRABBER RUNNING: " << curdate->tm_mday << "-" << curdate->tm_mon + 1 << "-" << curdate->tm_year+1900;
+    if(lwo) logwriter << " " << curdate->tm_hour << ":" << curdate->tm_min << ":" << curdate->tm_sec << std::endl;
+
 
     if(rf.check("controllerDevice")) {
 
@@ -56,6 +68,9 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
 
         vsctrlMngLeft = vDevCtrl(controllerDevice, I2C_ADDRESS_LEFT);
         vsctrlMngRight = vDevCtrl(controllerDevice, I2C_ADDRESS_RIGHT);
+
+        vsctrlMngLeft.useCurrentBias(iBias);
+        vsctrlMngRight.useCurrentBias(iBias);
 
         //bias values
         yarp::os::Bottle biaslistl = rf.findGroup("ATIS_BIAS_LEFT");
@@ -65,6 +80,7 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
 
         if(!vsctrlMngLeft.setBias(biaslistl) || !vsctrlMngRight.setBias(biaslistr) ) {
             std::cerr << "Bias file required to run zynqGrabber" << std::endl;
+            if(lwo) logwriter << "Could not find bias files" << std::endl << "ZYNQGRABBER CLOSING" << std::endl << std::endl;
             return false;
         }
         std::cout << std::endl;
@@ -73,6 +89,7 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
         else
             if(!vsctrlMngLeft.configure(verbose)) {
                 std::cerr << "Could not configure left camera" << std::endl;
+                if(lwo) logwriter << "Could not configure left camera" << std::endl;
             } else {
                 con_success = true;
             }
@@ -83,6 +100,7 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
         else {
             if(!vsctrlMngRight.configure(verbose)) {
                 std::cerr << "Could not configure right camera" << std::endl;
+                if(lwo) logwriter << "Could not configure right camera" << std::endl;
             } else {
                 con_success = true;
             }
@@ -91,7 +109,10 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
 
         if(!con_success) {
             std::cerr << "A configuration device was specified but could not be connected" << std::endl;
+            if(lwo) logwriter << "Could not connect to configuration device" << std::endl;
             return false;
+        } else {
+            if(lwo) logwriter << "Connected to and configured at least one device" << std::endl;
         }
 
     }
@@ -105,8 +126,10 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
         std::cout << "Left camera off" << std::endl;
         vsctrlMngRight.disconnect(true);
         std::cout << "Right camera off" << std::endl;
+        if(lwo) logwriter << "Only writing biases, or YARP not present" << std::endl << "ZYNQGRABBER CLOSING" << std::endl << std::endl;
         return false;
     }
+    logwriter.close();
 
 
     //open rateThread device2yarp
@@ -114,9 +137,10 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
 
         std::string dataDevice = rf.find("dataDevice").asString();
         int readPacketSize = 8 * rf.check("readPacketSize", yarp::os::Value("512")).asInt();
-        int maxBottleSize = 8 * rf.check("maxBottleSize", yarp::os::Value("100000")).asInt();
+        int bufferSize     = 8 * rf.check("bufferSize", yarp::os::Value("5120")).asInt();
+        int maxBottleSize  = 8 * rf.check("maxBottleSize", yarp::os::Value("5120")).asInt();
 
-        if(!D2Y.initialise(moduleName, strict, errorcheck, dataDevice, maxBottleSize, readPacketSize)) {
+        if(!D2Y.initialise(moduleName, errorcheck, dataDevice, bufferSize, readPacketSize, maxBottleSize)) {
             std::cout << "A data device was specified but could not be initialised" << std::endl;
             return false;
         } else {
@@ -125,7 +149,7 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
 
                 yarp::os::Bottle filp = rf.findGroup("FILTER_PARAMS");
                 if(!filp.isNull()) {
-                    std::cout << "APPLYING EVENT FILTER: " << std::endl;
+                    yInfo() << "APPLYING FILTER";
                     std::cout << filp.toString() << std::endl;
 
                     D2Y.initialiseFilter(true,
@@ -137,7 +161,7 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
             }
 
             if(jumpcheck) {
-                std::cout << "CHECKING FOR ERRORS IN TIMESTAMPS" << std::endl;
+                yInfo() << "CHECKING FOR TIMESTAMP JUMPS";
                 D2Y.checkForTSJumps();
             }
             D2Y.start();
@@ -159,14 +183,6 @@ bool zynqGrabberModule::configure(yarp::os::ResourceFinder &rf) {
 }
 
 bool zynqGrabberModule::interruptModule() {
-    handlerPort.interrupt();
-    Y2D.interrupt();
-    // D2Y ???
-    return true;
-}
-
-bool zynqGrabberModule::close() {
-
     std::cout << "breaking YARP connections.. ";
     handlerPort.close();        // rpc of the RF module
     Y2D.close();
@@ -177,6 +193,11 @@ bool zynqGrabberModule::close() {
     vsctrlMngLeft.disconnect(true);
     vsctrlMngRight.disconnect(true);
     std::cout << "done" << std::endl;
+    return true;
+}
+
+bool zynqGrabberModule::close() {
+
 
     return true;
 }
@@ -184,7 +205,7 @@ bool zynqGrabberModule::close() {
 /* Called periodically every getPeriod() seconds */
 bool zynqGrabberModule::updateModule() {
 
-    return true;
+    return !isStopping();
 }
 
 double zynqGrabberModule::getPeriod() {

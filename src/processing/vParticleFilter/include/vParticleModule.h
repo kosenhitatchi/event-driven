@@ -14,10 +14,10 @@
  * Public License for more details
  */
 
-/// \defgroup Modules Modules
-/// \defgroup vParticleFilter vParticleFilter
-/// \ingroup Modules
-/// \brief tracks targets using a particle filter
+// \defgroup Modules Modules
+// \defgroup vParticleFilter vParticleFilter
+// \ingroup Modules
+/// \brief Event-driven Detection and Tracking using a Particle Filter
 
 #ifndef __V_PARTICLEMODULE__
 #define __V_PARTICLEMODULE__
@@ -34,7 +34,10 @@ class vParticleModule : public yarp::os::RFModule
 {
     //the event bottle input and output handler
     vParticleReader *particleCallback;
-    particleProcessor *particleThread;
+    particleProcessor *rightThread;
+    particleProcessor *leftThread;
+    hSurfThread eventhandler;
+    collectorPort outport;
 
 public:
 
