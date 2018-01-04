@@ -169,13 +169,19 @@ void vParticle::initialiseParameters(int id, double minLikelihood,
                                      double variance, int angbuckets)
 {
     this->id = id;
-    this->minlikelihood = minLikelihood;
     this->outlierParameter = outlierParam;
     this->inlierParameter = inlierParam;
     this->variance = variance;
     this->angbuckets = angbuckets;
     angdist.resize(angbuckets);
     negdist.resize(angbuckets);
+
+    updateMinLikelihood(minLikelihood);
+}
+
+void vParticle::updateMinLikelihood(double value)
+{
+    minlikelihood = value * angbuckets;
 }
 
 vParticle& vParticle::operator=(const vParticle &rhs)
@@ -331,6 +337,12 @@ void vParticlefilter::resetToSeed()
                                   ((double)rand()/RAND_MAX), 0);
         }
     }
+}
+
+void vParticlefilter::resetMinLikelihood(double value)
+{
+    for(int i = 0; i < nparticles; i++)
+        ps[i].updateMinLikelihood(value);
 }
 
 void vParticlefilter::performObservation(const vQueue &q)

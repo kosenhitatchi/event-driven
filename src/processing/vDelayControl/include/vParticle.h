@@ -155,6 +155,7 @@ public:
 
     //initialise etc.
     void initialiseParameters(int id, double minLikelihood, double outlierParam, double inlierParam, double variance, int angbuckets);
+    void updateMinLikelihood(double value);
     void attachPCB(preComputedBins *pcb) { this->pcb = pcb; }
 
     void initialiseState(double x, double y, double r, double tw);
@@ -308,6 +309,7 @@ public:
 
     void setSeed(int x, int y, int r = 0);
     void resetToSeed();
+    void resetMinLikelihood(double value);
     bool inbounds(vParticle &p);
 
     void performObservation(const vQueue &q);

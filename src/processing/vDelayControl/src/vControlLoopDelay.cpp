@@ -33,18 +33,36 @@ void delayControl::initFilter(int width, int height, int nparticles, int bins,
     res.width = width;
 }
 
+void delayControl::updateFilterParams(double minlikelihood)
+{
+    if(minlikelihood > 0)
+        vpf.resetMinLikelihood(minlikelihood);
+}
+
 void delayControl::setFilterInitialState(int x, int y, int r)
 {
     vpf.setSeed(x, y, r);
     vpf.resetToSeed();
 }
 
-void delayControl::initDelayControl(double gain, int maxtoproc, int positiveThreshold, int mindelay)
+void delayControl::setMaxRawLikelihood(int value)
 {
-    this->gain = gain;
-    this->minEvents = mindelay;
-    qROI.setSize(maxtoproc);
-    this->detectionThreshold = positiveThreshold;
+    maxRawLikelihood = value;
+}
+
+void delayControl::setTrueThreshold(double value)
+{
+    detectionThreshold = value * maxRawLikelihood;
+}
+
+void delayControl::setGain(double value)
+{
+    gain = value;
+}
+
+void delayControl::setMinToProc(int value)
+{
+    minEvents = value;
 }
 
 bool delayControl::open(std::string name, unsigned int qlimit)
@@ -85,6 +103,7 @@ void delayControl::run()
     double stagnantstart = 0;
     bool detection = false;
     int channel;
+    qROI.setSize(50.0);
 
     //START HERE!!
     ev::vQueue *q = 0;
@@ -177,7 +196,7 @@ void delayControl::run()
                     vpf.resetToSeed();
                     detection = false;
                     stagnantstart = 0;
-                    yInfo() << "Performing full resample";
+                    //yInfo() << "Performing full resample";
                 }
             }
         } else {

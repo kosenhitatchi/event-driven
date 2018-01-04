@@ -62,6 +62,7 @@ private:
     //variables
     resolution res;
     double avgx, avgy, avgr;
+    int maxRawLikelihood;
     double gain;
     double minEvents;
     int detectionThreshold;
@@ -79,8 +80,14 @@ public:
     void initFilter(int width, int height, int nparticles,
                     int bins, bool adaptive, int nthreads,
                     double minlikelihood, double inlierThresh, double randoms);
+    void updateFilterParams(double minlikelihood);
     void setFilterInitialState(int x, int y, int r);
-    void initDelayControl(double gain, int maxtoproc, int positiveThreshold, int mindelay);
+
+    void setMaxRawLikelihood(int value);
+    void setTrueThreshold(double value);
+
+    void setGain(double value);
+    void setMinToProc(int value);
 
     //bool threadInit();
     void onStop();

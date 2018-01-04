@@ -34,7 +34,8 @@
 class module : public yarp::os::RFModule
 {
 
-    delayControl delaycontrol;
+    yarp::os::Port rpcPort;
+    delayControl  delaycontrol;
 
 public:
 
@@ -44,6 +45,7 @@ public:
     virtual bool close();
     virtual double getPeriod();
     virtual bool updateModule();
+    virtual bool respond(const yarp::os::Bottle& command, yarp::os::Bottle& reply);
 
 };
 
