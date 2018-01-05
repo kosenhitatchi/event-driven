@@ -310,7 +310,6 @@ public:
     void setSeed(int x, int y, int r = 0);
     void resetToSeed();
     void resetMinLikelihood(double value);
-    bool inbounds(vParticle &p);
 
     void performObservation(const vQueue &q);
     void extractTargetPosition(double &x, double &y, double &r);

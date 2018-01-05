@@ -80,11 +80,13 @@ bool module::configure(yarp::os::ResourceFinder &rf)
     double inlierParameter = rf.check("obsinlier", yarp::os::Value(1.5)).asDouble();
     double particleVariance = rf.check("variance", yarp::os::Value(0.5)).asDouble();
     double trueDetectionThreshold = rf.check("truethresh", yarp::os::Value(0.35)).asDouble();
+    double resetTimeout = rf.check("reset", yarp::os::Value(1.0)).asDouble();
 
     delaycontrol.setGain(gain);
     delaycontrol.setMaxRawLikelihood(bins);
     delaycontrol.setMinToProc(mindelay);
     delaycontrol.setTrueThreshold(trueDetectionThreshold);
+    delaycontrol.setResetTimeout(resetTimeout);
 
     delaycontrol.initFilter(width, height, particles, bins, adaptivesampling,
                             nthread, minlikelihood, inlierParameter, nRandResample);
@@ -125,8 +127,9 @@ double module::getPeriod()
 
 }
 
-#define CMD_HELP VOCAB4('h', 'e', 'l', 'p')
-#define CMD_SET  VOCAB3('s', 'e', 't')
+#define CMD_HELP  VOCAB4('h', 'e', 'l', 'p')
+#define CMD_SET   VOCAB3('s', 'e', 't')
+#define CMD_RESET VOCAB3('r', 'e', 's')
 
 bool module::respond(const yarp::os::Bottle& command,
                                 yarp::os::Bottle& reply) {
@@ -172,10 +175,20 @@ bool module::respond(const yarp::os::Bottle& command,
             reply.addString("setting minimum events per update");
             delaycontrol.setMinToProc(value);
         }
+        else if(param == "resetTimeout") {
+            reply.addString("setting the particle reset timeout");
+            delaycontrol.setResetTimeout(value);
+        }
         else {
             error = true;
             reply.addString("incorrect parameter");
         }
+        break;
+    }
+    case CMD_RESET:
+    {
+        reply.addString("resetting particle positions");
+        delaycontrol.performReset();
         break;
     }
     default:

@@ -65,6 +65,16 @@ void delayControl::setMinToProc(int value)
     minEvents = value;
 }
 
+void delayControl::setResetTimeout(double value)
+{
+    resetTimeout = value;
+}
+
+void delayControl::performReset()
+{
+    vpf.resetToSeed();
+}
+
 bool delayControl::open(std::string name, unsigned int qlimit)
 {
     inputPort.setQLimit(qlimit);
@@ -101,7 +111,6 @@ void delayControl::run()
     unsigned int i = 0;
     yarp::os::Stamp ystamp;
     double stagnantstart = 0;
-    bool detection = false;
     int channel;
     qROI.setSize(50.0);
 
@@ -192,15 +201,13 @@ void delayControl::run()
             if(!stagnantstart) {
                 stagnantstart = yarp::os::Time::now();
             } else {
-                if(yarp::os::Time::now() - stagnantstart > 1.0) {
+                if(yarp::os::Time::now() - stagnantstart > resetTimeout) {
                     vpf.resetToSeed();
-                    detection = false;
                     stagnantstart = 0;
-                    //yInfo() << "Performing full resample";
                 }
             }
+
         } else {
-            detection = true;
             stagnantstart = 0;
         }
 

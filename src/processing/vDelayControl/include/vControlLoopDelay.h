@@ -66,6 +66,7 @@ private:
     double gain;
     double minEvents;
     int detectionThreshold;
+    double resetTimeout;
 
     //diagnostics
     yarp::os::BufferedPort<yarp::os::Bottle> scopePort;
@@ -81,6 +82,7 @@ public:
                     int bins, bool adaptive, int nthreads,
                     double minlikelihood, double inlierThresh, double randoms);
     void updateFilterParams(double minlikelihood);
+    void performReset();
     void setFilterInitialState(int x, int y, int r);
 
     void setMaxRawLikelihood(int value);
@@ -88,6 +90,7 @@ public:
 
     void setGain(double value);
     void setMinToProc(int value);
+    void setResetTimeout(double value);
 
     //bool threadInit();
     void onStop();
