@@ -152,10 +152,8 @@ vParticle::vParticle()
     inlierParameter = 1.5;
     outlierParameter = 3.0;
     variance = 0.5;
-    stamp = 0;
-    tw = 0;
+    nw = 0;
     inlierCount = 0;
-    maxtw = 0;
     outlierCount = 0;
     pcb = 0;
     angbuckets = 128;
@@ -189,28 +187,20 @@ vParticle& vParticle::operator=(const vParticle &rhs)
     this->x = rhs.x;
     this->y = rhs.y;
     this->r = rhs.r;
-    this->tw = rhs.tw;
     this->weight = rhs.weight;
-    this->stamp = rhs.stamp;
     return *this;
 }
 
-void vParticle::initialiseState(double x, double y, double r, double tw)
+void vParticle::initialiseState(double x, double y, double r)
 {
     this->x = x;
     this->y = y;
     this->r = r;
-    this->tw = tw;
 }
 
-void vParticle::randomise(int x, int y, int r, int tw)
+void vParticle::randomise(int x, int y, int r)
 {
-    initialiseState(rand()%x, rand()%y, rand()%r, rand()%tw);
-}
-
-void vParticle::resetStamp(unsigned long int value)
-{
-    stamp = value;
+    initialiseState(rand()%x, rand()%y, rand()%r);
 }
 
 void vParticle::resetWeight(double value)
@@ -328,13 +318,13 @@ void vParticlefilter::resetToSeed()
 {
     if(seedr) {
         for(int i = 0; i < nparticles; i++) {
-            ps[i].initialiseState(seedx, seedy, seedr, 1.0);
+            ps[i].initialiseState(seedx, seedy, seedr);
         }
     } else {
         for(int i = 0; i < nparticles; i++) {
             ps[i].initialiseState(seedx, seedy,
                                   rbound_min + (rbound_max - rbound_min) *
-                                  ((double)rand()/RAND_MAX), 0);
+                                  ((double)rand()/RAND_MAX));
         }
     }
 }
@@ -352,11 +342,11 @@ void vParticlefilter::performObservation(const vQueue &q)
 
         //START WITHOUT THREAD
         for(int i = 0; i < nparticles; i++) {
-            ps[i].initLikelihood();
+            ps[i].initLikelihood(q.size());
         }
 
         for(int i = 0; i < nparticles; i++) {
-            for(int j = (int)(q.size()-1); j >= 0; j--) {
+            for(int j = 0; j < (int)q.size(); j++) {
                 AE* v = read_as<AE>(q[j]);
                 ps[i].incrementalLikelihood(v->x, v->y, j);
             }
@@ -407,7 +397,7 @@ void vParticlefilter::extractTargetWindow(double &tw)
 
     for(int i = 0; i < nparticles; i++) {
         double w = ps[i].getw();
-        tw += ps[i].gettw() * w;
+        tw += ps[i].getnw() * w;
 
     }
 
@@ -428,7 +418,7 @@ void vParticlefilter::performResample()
         for(int i = 0; i < nparticles; i++) {
             double rn = nRandoms * (double)rand() / RAND_MAX;
             if(rn > 1.0)
-                ps[i].randomise(res.width, res.height, rbound_max, 0.001 * vtsHelper::vtsscaler);
+                ps[i].randomise(res.width, res.height, rbound_max);
             else {
                 int j = 0;
                 for(j = 0; j < nparticles; j++)
@@ -488,16 +478,16 @@ void vPartObsThread::run()
         processing.lock();
         if(isStopping()) return;
 
+        int nw = (*stw).size();
+
         for(int i = pStart; i < pEnd; i++) {
-            (*particles)[i].initLikelihood();
+            (*particles)[i].initLikelihood(nw);
         }
 
         for(int i = pStart; i < pEnd; i++) {
-            for(int j = (int)(stw->size()-1); j >= 0; j--) {
+            for(int j = 0; j < nw; j++) {
                 AE* v = read_as<AE>((*stw)[j]);
                 (*particles)[i].incrementalLikelihood(v->x, v->y, j);
-
-
             }
         }
 

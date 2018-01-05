@@ -127,11 +127,10 @@ private:
 
     //temporary parameters (on update cycle)
     double likelihood;
-
+    int nw;
     double predlike;
     int    outlierCount;
     int    inlierCount;
-    double maxtw;
     yarp::sig::Vector angdist;
     yarp::sig::Vector negdist;
 
@@ -139,11 +138,8 @@ private:
     double x;
     double y;
     double r;
-    double tw;
-    double weight;
 
-    //timing
-    unsigned long int stamp;
+    double weight;
 
 public:
 
@@ -158,10 +154,9 @@ public:
     void updateMinLikelihood(double value);
     void attachPCB(preComputedBins *pcb) { this->pcb = pcb; }
 
-    void initialiseState(double x, double y, double r, double tw);
-    void randomise(int x, int y, int r, int tw);
+    void initialiseState(double x, double y, double r);
+    void randomise(int x, int y, int r);
 
-    void resetStamp(unsigned long int value);
     void resetWeight(double value);
     void resetRadius(double value);
     void resetArea();
@@ -173,19 +168,18 @@ public:
     void predict(double sigma);
     double approxatan2(double y, double x);
 
-    void initLikelihood()
+    void initLikelihood(int windowSize)
     {
         likelihood = minlikelihood;
         inlierCount = 0;
         outlierCount = 0;
         angdist.zero();
-        maxtw = 0;
         score = 0;
-        tw = 0;
+        nw = windowSize;
         resetArea();
     }
 
-    inline void incrementalLikelihood(int vx, int vy, int dt)
+    inline void incrementalLikelihood(int vx, int vy, int n)
     {
         double dx = vx - x;
         double dy = vy - y;
@@ -209,7 +203,7 @@ public:
                 score = inlierCount - (negscaler * outlierCount);
                 if(score >= likelihood) {
                     likelihood = score;
-                    maxtw = dt;
+                    nw = n;
                 }
 
             }
@@ -222,8 +216,7 @@ public:
 
     void concludeLikelihood()
     {
-        if(likelihood > minlikelihood) tw = maxtw;
-        //if(likelihood == minlikelihood) likelihood *= 0.5;
+        //if(likelihood < minlikelihood) nw = n;
         weight = likelihood * weight;
     }
 
@@ -236,7 +229,7 @@ public:
     inline double getr()  { return r; }
     inline double getw()  { return weight; }
     inline double getl()  { return likelihood; }
-    inline double gettw() { return tw; }
+    inline double getnw() { return nw; }
 
 
 };

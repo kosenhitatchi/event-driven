@@ -174,17 +174,12 @@ void delayControl::run()
         qROI.setROI(avgx - roisize, avgx + roisize, avgy - roisize, avgy + roisize);
 
         //set our new window #events
-        double nw; vpf.extractTargetWindow(nw);
-        //if(qROI.q.size() * 0.02 > nw) nw = 0;
-        if(nw < 30) nw = 0;
-        qROI.setSize(std::min(std::max(qROI.q.size() - nw, 50.0), 3000.0));
+        double discard = qROI.q.size() - vpf.extractTargetWindow(nw);
+        if(discard < 30) discard = 0;
+        qROI.setSize(std::min(std::max(qROI.q.size() - discard, 50.0), 3000.0));
 
-        //calculate window in time
-        double tw = 0;
-        if(nw >= qROI.q.size())
-            yError() << "# window > queue";
-        else
-            tw = qROI.q.back()->stamp - qROI.q[(int)(nw+0.5)]->stamp;
+        //calculate the temporal window of the q
+        double tw = qROI.q.front()->stamp - qROI.q.back()->stamp;
         if(tw < 0) tw += vtsHelper::max_stamp;
 
         Tresample = yarp::os::Time::now();
@@ -368,7 +363,7 @@ void roiq::setSize(unsigned int value)
     //otherwise n is in # events.
     n = value;
     while(q.size() > n)
-        q.pop_front();
+        q.pop_back();
 }
 
 void roiq::setROI(int xl, int xh, int yl, int yh)
@@ -382,21 +377,6 @@ int roiq::add(event<AE> &v)
 
     if(v->x < roi[0] || v->x > roi[1] || v->y < roi[2] || v->y > roi[3])
         return 0;
-    q.push_back(v);
-    return 1;
-    if(!use_TW) {
-        while(q.size() > n)
-            q.pop_front();
-    } else {
-
-        int dt = v->stamp - q.front()->stamp;
-        if(dt < 0) dt += vtsHelper::max_stamp;
-        while(dt > n) {
-            q.pop_front();
-            dt = v->stamp - q.front()->stamp;
-            if(dt < 0) dt += vtsHelper::max_stamp;
-        }
-    }
-
+    q.push_front(v);
     return 1;
 }
