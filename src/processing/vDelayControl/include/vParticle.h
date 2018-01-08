@@ -114,7 +114,6 @@ private:
     int id;
     double minlikelihood;
     double inlierParameter;
-    double outlierParameter;
     double variance;
     int angbuckets;
     preComputedBins *pcb;
@@ -151,7 +150,7 @@ public:
     vParticle& operator=(const vParticle &rhs);
 
     //initialise etc.
-    void initialiseParameters(int id, double minLikelihood, double outlierParam, double inlierParam, double variance, int angbuckets);
+    void initialiseParameters(int id, double minLikelihood, double negativeBias, double inlierParam, double variance, int angbuckets);
     void updateMinLikelihood(double value);
     void attachPCB(preComputedBins *pcb) { this->pcb = pcb; }
 
@@ -164,6 +163,7 @@ public:
     void setContraints(int minx, int maxx, int miny, int maxy, int minr, int maxr);
     void checkConstraints();
     void setNegativeBias(double value);
+    void setInlierParameter(double value);
 
 
     //update
@@ -300,11 +300,12 @@ public:
 
     void initialise(int width, int height, int nparticles,
                     int bins, bool adaptive, int nthreads, double minlikelihood,
-                    double inlierThresh, double randoms);
+                    double inlierThresh, double randoms, double negativeBias);
 
     void setSeed(int x, int y, int r = 0);
     void resetToSeed();
     void setMinLikelihood(double value);
+    void setInlierParameter(double value);
     void setNegativeBias(double value);
 
     void performObservation(const vQueue &q);

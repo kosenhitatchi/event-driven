@@ -150,7 +150,6 @@ vParticle::vParticle()
     predlike = 1.0;
     minlikelihood = 20.0;
     inlierParameter = 1.5;
-    outlierParameter = 3.0;
     variance = 0.5;
     nw = 0;
     inlierCount = 0;
@@ -164,11 +163,11 @@ vParticle::vParticle()
 }
 
 void vParticle::initialiseParameters(int id, double minLikelihood,
-                                     double outlierParam, double inlierParam,
+                                     double negativeBias, double inlierParam,
                                      double variance, int angbuckets)
 {
     this->id = id;
-    this->outlierParameter = outlierParam;
+    this->negativeBias = negativeBias;
     this->inlierParameter = inlierParam;
     this->variance = variance;
     this->angbuckets = angbuckets;
@@ -218,6 +217,11 @@ void vParticle::resetRadius(double value)
 void vParticle::setNegativeBias(double value)
 {
     negativeBias = value;
+}
+
+void vParticle::setInlierParameter(double value)
+{
+    inlierParameter = value;
 }
 
 void vParticle::resetArea()
@@ -270,7 +274,7 @@ void vParticle::updateWeightSync(double normval)
 void vParticlefilter::initialise(int width, int height, int nparticles,
                                  int bins, bool adaptive, int nthreads,
                                  double minlikelihood, double inlierThresh,
-                                 double randoms)
+                                 double randoms, double negativeBias)
 {
     res.width = width;
     res.height = height;
@@ -307,7 +311,7 @@ void vParticlefilter::initialise(int width, int height, int nparticles,
     p.resetWeight(1.0/nparticles);
     p.setContraints(0, res.width, 0, res.height, rbound_min, rbound_max);
     for(int i = 0; i < this->nparticles; i++) {
-        p.initialiseParameters(i, minlikelihood, 0, inlierThresh, 0, bins);
+        p.initialiseParameters(i, minlikelihood, negativeBias, inlierThresh, 0, bins);
         ps.push_back(p);
         ps_snap.push_back(p);
     }
@@ -339,6 +343,12 @@ void vParticlefilter::setMinLikelihood(double value)
 {
     for(int i = 0; i < nparticles; i++)
         ps[i].updateMinLikelihood(value);
+}
+
+void vParticlefilter::setInlierParameter(double value)
+{
+    for(int i = 0; i < nparticles; i++)
+        ps[i].setInlierParameter(value);
 }
 
 void vParticlefilter::setNegativeBias(double value)

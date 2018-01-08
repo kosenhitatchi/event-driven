@@ -78,18 +78,20 @@ bool module::configure(yarp::os::ResourceFinder &rf)
     //observation parameters
     double minlikelihood = rf.check("obsthresh", yarp::os::Value(0.2)).asDouble();
     double inlierParameter = rf.check("obsinlier", yarp::os::Value(1.5)).asDouble();
-    double particleVariance = rf.check("variance", yarp::os::Value(0.5)).asDouble();
+    double particleVariance = rf.check("variance", yarp::os::Value(0.7)).asDouble();
     double trueDetectionThreshold = rf.check("truethresh", yarp::os::Value(0.35)).asDouble();
     double resetTimeout = rf.check("reset", yarp::os::Value(1.0)).asDouble();
+    double negativeBias = rf.check("negbias", yarp::os::Value(10.0)).asDouble();
 
     delaycontrol.setGain(gain);
     delaycontrol.setMaxRawLikelihood(bins);
     delaycontrol.setMinToProc(mindelay);
     delaycontrol.setTrueThreshold(trueDetectionThreshold);
     delaycontrol.setResetTimeout(resetTimeout);
+    delaycontrol.setMotionVariance(particleVariance);
 
     delaycontrol.initFilter(width, height, particles, bins, adaptivesampling,
-                            nthread, minlikelihood, inlierParameter, nRandResample);
+                            nthread, minlikelihood, inlierParameter, nRandResample, negativeBias);
     if(seed && seed->size() == 3) {
         yInfo() << "Setting initial seed state:" << seed->toString();
         delaycontrol.setFilterInitialState(seed->get(0).asDouble(), seed->get(1).asDouble(), seed->get(2).asDouble());
@@ -182,6 +184,14 @@ bool module::respond(const yarp::os::Bottle& command,
         else if(param == "negativeBias") {
             reply.addString("setting the observation negative bias");
             delaycontrol.setNegativeBias(value);
+        }
+        else if(param == "motionVar") {
+            reply.addString("setting particle motion variance");;
+            delaycontrol.setMotionVariance(value);
+        }
+        else if(param == "inlierParam") {
+            reply.addString("setting the inlier width");
+            delaycontrol.setInlierParameter(value);
         }
         else {
             error = true;

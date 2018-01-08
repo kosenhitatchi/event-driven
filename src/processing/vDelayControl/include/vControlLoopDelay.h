@@ -67,6 +67,7 @@ private:
     double minEvents;
     int detectionThreshold;
     double resetTimeout;
+    double motionVariance;
 
     //diagnostics
     yarp::os::BufferedPort<yarp::os::Bottle> scopePort;
@@ -80,13 +81,15 @@ public:
     bool open(std::string name, unsigned int qlimit = 0);
     void initFilter(int width, int height, int nparticles,
                     int bins, bool adaptive, int nthreads,
-                    double minlikelihood, double inlierThresh, double randoms);
+                    double minlikelihood, double inlierThresh, double randoms, double negativeBias);
     void updateFilterParams(double minlikelihood);
     void performReset();
     void setFilterInitialState(int x, int y, int r);
 
     void setMaxRawLikelihood(int value);
     void setNegativeBias(int value);
+    void setInlierParameter(int value);
+    void setMotionVariance(double value);
     void setTrueThreshold(double value);
 
     void setGain(double value);

@@ -24,10 +24,10 @@
 
 void delayControl::initFilter(int width, int height, int nparticles, int bins,
                               bool adaptive, int nthreads, double minlikelihood,
-                              double inlierThresh, double randoms)
+                              double inlierThresh, double randoms, double negativeBias)
 {
     vpf.initialise(width, height, nparticles, bins, adaptive, nthreads,
-                   minlikelihood, inlierThresh, randoms);
+                   minlikelihood, inlierThresh, randoms, negativeBias);
 
     res.height = height;
     res.width = width;
@@ -53,6 +53,16 @@ void delayControl::setMaxRawLikelihood(int value)
 void delayControl::setNegativeBias(int value)
 {
     vpf.setNegativeBias(value);
+}
+
+void delayControl::setInlierParameter(int value)
+{
+    vpf.setInlierParameter(value);
+}
+
+void delayControl::setMotionVariance(double value)
+{
+    motionVariance = value;
 }
 
 void delayControl::setTrueThreshold(double value)
@@ -179,7 +189,7 @@ void delayControl::run()
         qROI.setROI(avgx - roisize, avgx + roisize, avgy - roisize, avgy + roisize);
 
         //set our new window #events
-        double nw = vpf.extractTargetWindow(nw);
+        double nw; vpf.extractTargetWindow(nw);
         double discard = qROI.q.size() - nw;
         if(discard < 30) discard = 0;
         qROI.setSize(std::min(std::max(qROI.q.size() - discard, 50.0), 3000.0));
@@ -193,7 +203,8 @@ void delayControl::run()
         Tresample = yarp::os::Time::now() - Tresample;
 
         Tpredict = yarp::os::Time::now();
-        vpf.performPrediction(std::max(addEvents / (5.0 * avgr), 0.7));
+        //vpf.performPrediction(std::max(addEvents / (5.0 * avgr), 0.7));
+        vpf.performPrediction(motionVariance);
         Tpredict = yarp::os::Time::now() - Tpredict;
 
         //check for stagnancy
@@ -241,37 +252,25 @@ void delayControl::run()
         if(scopePort.getOutputCount()) {
 
             static int countscope = 0;
-            static double val1 = 0;//-ev::vtsHelper::max_stamp;
-            static double val2 = 0;//-ev::vtsHelper::max_stamp;
-            static double val3 = 0;//-ev::vtsHelper::max_stamp;
-            static double val4 = 0;//-ev::vtsHelper::max_stamp;
-            static double val5 = 0;//-ev::vtsHelper::max_stamp;
-            static double val6 = 0;//-ev::vtsHelper::max_stamp;
-            static double val7 = 0;//-ev::vtsHelper::max_stamp;
+            static double val1 = 0;
+            static double val2 = 0;
+            static double val3 = 0;
+            static double val4 = 0;
+            static double val5 = 0;
+            static double val6 = 0;
+            static double val7 = 0;
+            static double val8 = 0;
 
             double ratetimedt = yarp::os::Time::now() - ratetime;
-//            val1 = std::max(val1, (double)(1.0/ratetimedt));
-//            val2 = std::max(val2, (double)inputPort.queryDelayN());
-//            val3 = std::max(val3, inputPort.queryDelayT());
-//            val4 = std::max(val4, inputPort.queryRate() / 1000.0);
-//            val5 = std::max(val5, avgx);
-//            val6 = std::max(val6, avgy);
-//            val7 = std::max(val7, avgr);
             val1 += 152;
-            val2 += 1.0/ratetimedt;//(double)inputPort.queryDelayN();
-            val3 += 120;//vpf.maxlikelihood;//inputPort.queryDelayT();
+            val2 += 1.0/ratetimedt;
+            val3 += 120;
             val4 += inputPort.queryRate() / 1000.0;
             val5 += avgx;
             val6 += avgy;
             val7 += avgr * 2;
+            val8 += vpf.maxlikelihood / (double)maxRawLikelihood;
             ratetime += ratetimedt;
-            //val3 = val5;
-
-            //val2 = 0;
-            //val3 = 0;//std::max(val3, inputPort.queryDelayT());
-            //val5 = 0;//std::max(val5, avgx);
-            //val6 = 0;//std::max(val6, avgy);
-            //val7 = 0;//std::max(val7, avgr);
             countscope++;
 
             double scopedt = yarp::os::Time::now() - pscopetime;
@@ -287,6 +286,7 @@ void delayControl::run()
                 scopedata.addDouble(val5/countscope);
                 scopedata.addDouble(val6/countscope);
                 scopedata.addDouble(val7/countscope);
+                scopedata.addDouble(val8/countscope);
 
                 val1 = 0;//-ev::vtsHelper::max_stamp;
                 val2 = 0;//-ev::vtsHelper::max_stamp;
@@ -295,6 +295,7 @@ void delayControl::run()
                 val5 = 0;//-ev::vtsHelper::max_stamp;
                 val6 = 0;//-ev::vtsHelper::max_stamp;
                 val7 = 0;//-ev::vtsHelper::max_stamp;
+                val8 = 0;
 
                 countscope = 0;
 
