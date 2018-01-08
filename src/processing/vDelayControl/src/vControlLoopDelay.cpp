@@ -36,7 +36,7 @@ void delayControl::initFilter(int width, int height, int nparticles, int bins,
 void delayControl::updateFilterParams(double minlikelihood)
 {
     if(minlikelihood > 0)
-        vpf.resetMinLikelihood(minlikelihood);
+        vpf.setMinLikelihood(minlikelihood);
 }
 
 void delayControl::setFilterInitialState(int x, int y, int r)
@@ -48,6 +48,11 @@ void delayControl::setFilterInitialState(int x, int y, int r)
 void delayControl::setMaxRawLikelihood(int value)
 {
     maxRawLikelihood = value;
+}
+
+void delayControl::setNegativeBias(int value)
+{
+    vpf.setNegativeBias(value);
 }
 
 void delayControl::setTrueThreshold(double value)
@@ -174,7 +179,8 @@ void delayControl::run()
         qROI.setROI(avgx - roisize, avgx + roisize, avgy - roisize, avgy + roisize);
 
         //set our new window #events
-        double discard = qROI.q.size() - vpf.extractTargetWindow(nw);
+        double nw = vpf.extractTargetWindow(nw);
+        double discard = qROI.q.size() - nw;
         if(discard < 30) discard = 0;
         qROI.setSize(std::min(std::max(qROI.q.size() - discard, 50.0), 3000.0));
 

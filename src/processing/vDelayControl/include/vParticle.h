@@ -118,7 +118,8 @@ private:
     double variance;
     int angbuckets;
     preComputedBins *pcb;
-    double negscaler;
+    double negativeBias;
+    double negativeScaler;
 
     bool constrain;
     int minx, maxx;
@@ -162,6 +163,7 @@ public:
     void resetArea();
     void setContraints(int minx, int maxx, int miny, int maxy, int minr, int maxr);
     void checkConstraints();
+    void setNegativeBias(double value);
 
 
     //update
@@ -200,7 +202,7 @@ public:
                 inlierCount++;
                 angdist[a] = 1;
 
-                score = inlierCount - (negscaler * outlierCount);
+                score = inlierCount - (negativeScaler * outlierCount);
                 if(score >= likelihood) {
                     likelihood = score;
                     nw = n;
@@ -302,7 +304,8 @@ public:
 
     void setSeed(int x, int y, int r = 0);
     void resetToSeed();
-    void resetMinLikelihood(double value);
+    void setMinLikelihood(double value);
+    void setNegativeBias(double value);
 
     void performObservation(const vQueue &q);
     void extractTargetPosition(double &x, double &y, double &r);

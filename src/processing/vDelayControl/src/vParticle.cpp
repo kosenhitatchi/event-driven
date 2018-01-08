@@ -157,6 +157,7 @@ vParticle::vParticle()
     outlierCount = 0;
     pcb = 0;
     angbuckets = 128;
+    negativeBias = 2.0;
     angdist.resize(angbuckets);
     negdist.resize(angbuckets);
     constrain = false;
@@ -211,12 +212,17 @@ void vParticle::resetWeight(double value)
 void vParticle::resetRadius(double value)
 {
     this->r = value;
-    resetArea();
+    //resetArea();
+}
+
+void vParticle::setNegativeBias(double value)
+{
+    negativeBias = value;
 }
 
 void vParticle::resetArea()
 {
-    negscaler = 2.0 * angbuckets / (M_PI * r * r);
+    negativeScaler = negativeBias * angbuckets / (M_PI * r * r);
 }
 
 void vParticle::predict(double sigma)
@@ -273,8 +279,8 @@ void vParticlefilter::initialise(int width, int height, int nparticles,
     this->adaptive = adaptive;
     this->nthreads = nthreads;
     this->nRandoms = randoms + 1.0;
-    rbound_min = res.width/16;
-    rbound_max = res.width/6;
+    rbound_min = res.width/18;
+    rbound_max = res.width/5;
     pcb.configure(res.height, res.width, rbound_max, bins);
     setSeed(res.width/2.0, res.height/2.0);
 
@@ -329,10 +335,16 @@ void vParticlefilter::resetToSeed()
     }
 }
 
-void vParticlefilter::resetMinLikelihood(double value)
+void vParticlefilter::setMinLikelihood(double value)
 {
     for(int i = 0; i < nparticles; i++)
         ps[i].updateMinLikelihood(value);
+}
+
+void vParticlefilter::setNegativeBias(double value)
+{
+    for(int i = 0; i < nparticles; i++)
+        ps[i].setNegativeBias(value);
 }
 
 void vParticlefilter::performObservation(const vQueue &q)

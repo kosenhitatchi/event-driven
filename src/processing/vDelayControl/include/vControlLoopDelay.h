@@ -86,6 +86,7 @@ public:
     void setFilterInitialState(int x, int y, int r);
 
     void setMaxRawLikelihood(int value);
+    void setNegativeBias(int value);
     void setTrueThreshold(double value);
 
     void setGain(double value);

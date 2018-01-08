@@ -179,6 +179,10 @@ bool module::respond(const yarp::os::Bottle& command,
             reply.addString("setting the particle reset timeout");
             delaycontrol.setResetTimeout(value);
         }
+        else if(param == "negativeBias") {
+            reply.addString("setting the observation negative bias");
+            delaycontrol.setNegativeBias(value);
+        }
         else {
             error = true;
             reply.addString("incorrect parameter");
