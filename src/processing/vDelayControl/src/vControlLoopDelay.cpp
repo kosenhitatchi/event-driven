@@ -276,7 +276,7 @@ void delayControl::run()
             countscope++;
 
             double scopedt = yarp::os::Time::now() - pscopetime;
-            if((scopedt > 0.05 || scopedt < 0) && countscope > 3) {
+            if((scopedt > 0.1 || scopedt < 0) && countscope > 3) {
                 pscopetime += scopedt;
 
                 yarp::os::Bottle &scopedata = scopePort.prepare();
