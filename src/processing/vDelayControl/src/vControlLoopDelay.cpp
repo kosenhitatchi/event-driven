@@ -148,7 +148,7 @@ void delayControl::run()
         Tgetwindow = yarp::os::Time::now();
         unsigned int addEvents = 0;
         unsigned int testedEvents = 0;
-        while(testedEvents < targetproc) {
+        while(addEvents < targetproc) {
 
             //if we ran out of events get a new queue
             if(i >= q->size()) {
@@ -263,9 +263,9 @@ void delayControl::run()
             //static double val9 = 0;
 
             double ratetimedt = yarp::os::Time::now() - ratetime;
-            val1 += 152;
+            val1 += inputPort.queryDelayT();
             val2 += 1.0/ratetimedt;
-            val3 += 120;
+            val3 += targetproc;
             val4 += inputPort.queryRate() / 1000.0;
             val5 += avgx;
             val6 += avgy;
@@ -281,7 +281,7 @@ void delayControl::run()
 
                 yarp::os::Bottle &scopedata = scopePort.prepare();
                 scopedata.clear();
-                scopedata.addDouble(val1/countscope);
+                scopedata.addDouble(1000*val1/countscope);
                 scopedata.addDouble(val2/countscope);
                 scopedata.addDouble(val3/countscope);
                 scopedata.addDouble(val4/countscope);
@@ -289,7 +289,7 @@ void delayControl::run()
                 scopedata.addDouble(val6/countscope);
                 scopedata.addDouble(val7/countscope);
                 scopedata.addDouble(val8/countscope);
-                scopedata.addDouble(cpuusage.getProcessorUsage());
+                scopedata.addDouble(5000 * cpuusage.getProcessorUsage());
 
                 val1 = 0;//-ev::vtsHelper::max_stamp;
                 val2 = 0;//-ev::vtsHelper::max_stamp;
