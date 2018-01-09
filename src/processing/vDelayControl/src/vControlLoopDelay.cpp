@@ -184,7 +184,9 @@ void delayControl::run()
         Tlikelihood = yarp::os::Time::now() - Tlikelihood;
 
         //set our new position
+        double dx = avgx, dy = avgy, dr = avgr;
         vpf.extractTargetPosition(avgx, avgy, avgr);
+        dx = avgx - dx; dy = avgy - dy; dr = avgr - dr;
         double roisize = avgr * 1.4;
         qROI.setROI(avgx - roisize, avgx + roisize, avgy - roisize, avgy + roisize);
 
@@ -267,9 +269,9 @@ void delayControl::run()
             val2 += 1.0/ratetimedt;
             val3 += targetproc;
             val4 += inputPort.queryRate() / 1000.0;
-            val5 += avgx;
-            val6 += avgy;
-            val7 += avgr * 2;
+            val5 += dx;
+            val6 += dy;
+            val7 += dr;
             val8 += vpf.maxlikelihood / (double)maxRawLikelihood;
             //val9 += cpuusage.getProcessorUsage();
             ratetime += ratetimedt;
