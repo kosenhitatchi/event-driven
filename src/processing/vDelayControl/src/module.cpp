@@ -126,7 +126,6 @@ bool module::updateModule()
 double module::getPeriod()
 {
     return 1;
-
 }
 
 #define CMD_HELP  VOCAB4('h', 'e', 'l', 'p')

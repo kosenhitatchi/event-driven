@@ -260,6 +260,7 @@ void delayControl::run()
             static double val6 = 0;
             static double val7 = 0;
             static double val8 = 0;
+            //static double val9 = 0;
 
             double ratetimedt = yarp::os::Time::now() - ratetime;
             val1 += 152;
@@ -270,6 +271,7 @@ void delayControl::run()
             val6 += avgy;
             val7 += avgr * 2;
             val8 += vpf.maxlikelihood / (double)maxRawLikelihood;
+            //val9 += cpuusage.getProcessorUsage();
             ratetime += ratetimedt;
             countscope++;
 
@@ -287,6 +289,7 @@ void delayControl::run()
                 scopedata.addDouble(val6/countscope);
                 scopedata.addDouble(val7/countscope);
                 scopedata.addDouble(val8/countscope);
+                scopedata.addDouble(cpuusage.getProcessorUsage());
 
                 val1 = 0;//-ev::vtsHelper::max_stamp;
                 val2 = 0;//-ev::vtsHelper::max_stamp;
@@ -296,6 +299,7 @@ void delayControl::run()
                 val6 = 0;//-ev::vtsHelper::max_stamp;
                 val7 = 0;//-ev::vtsHelper::max_stamp;
                 val8 = 0;
+                //val9 = 0;
 
                 countscope = 0;
 

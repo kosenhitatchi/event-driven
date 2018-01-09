@@ -77,5 +77,12 @@
                color="Green"
                type="lines"
                size="2" />
+        <graph remote="/vpfR/scope:o"
+               index="8"
+               title="CPU (%)"
+               color="Blue"
+               type="lines"
+               size="2" />
+
     </plot>
 </portscope>

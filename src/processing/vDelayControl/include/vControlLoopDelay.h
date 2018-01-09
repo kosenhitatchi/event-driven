@@ -70,6 +70,7 @@ private:
     double motionVariance;
 
     //diagnostics
+    ev::benchmark cpuusage;
     yarp::os::BufferedPort<yarp::os::Bottle> scopePort;
     yarp::os::BufferedPort< yarp::sig::ImageOf< yarp::sig::PixelBgr> > debugPort;
 
