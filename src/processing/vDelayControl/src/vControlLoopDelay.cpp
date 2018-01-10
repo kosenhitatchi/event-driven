@@ -205,8 +205,8 @@ void delayControl::run()
         Tresample = yarp::os::Time::now() - Tresample;
 
         Tpredict = yarp::os::Time::now();
-        //vpf.performPrediction(std::max(addEvents / (5.0 * avgr), 0.7));
-        vpf.performPrediction(motionVariance);
+        vpf.performPrediction(std::max(addEvents / (5.0 * avgr), 0.7));
+        //vpf.performPrediction(motionVariance);
         Tpredict = yarp::os::Time::now() - Tpredict;
 
         //check for stagnancy

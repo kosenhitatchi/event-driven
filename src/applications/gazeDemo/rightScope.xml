@@ -6,7 +6,7 @@
           vspan="1"
           size="201"
           minval="0"
-          title="[Black] %CPU [Red] Filter Rate (Hz)"
+          title="[Black] %CPU [Red] Right Filter Rate (Hz)"
           maxval="5000"
           bgcolor="#EEFFEE">
         <graph remote="/vpfR/scope:o"
@@ -67,8 +67,8 @@
           vspan="1"
           size="201"
           title="Update Step (px)"
-          minval="0"
-          maxval="2.0"
+          minval="-1.5"
+          maxval="1.5"
           bgcolor="#EEFFEE">
         <graph remote="/vpfR/scope:o"
                index="4"
