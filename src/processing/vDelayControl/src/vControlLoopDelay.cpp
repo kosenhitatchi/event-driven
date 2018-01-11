@@ -310,47 +310,126 @@ void delayControl::run()
         }
 
         //output a debug image
-        static double pimagetime = yarp::os::Time::now();
-        double pimagetimedt = yarp::os::Time::now() - pimagetime;
-        if(debugPort.getOutputCount() && pimagetimedt > 0.04) {
-            pimagetime += pimagetimedt;
+        if(debugPort.getOutputCount()) {
+            static int NOFPANELS = 3;
 
-            yarp::sig::ImageOf< yarp::sig::PixelBgr> &image = debugPort.prepare();
-            image.resize(res.width, res.height);
-            image.zero();
+            static yarp::sig::ImageOf< yarp::sig::PixelBgr> *image_ptr = 0;
+            static int panelnumber = NOFPANELS;
 
+            static double pimagetime = yarp::os::Time::now();
 
-            int px1 = avgx - roisize; if(px1 < 0) px1 = 0;
-            int px2 = avgx + roisize; if(px2 >= res.width) px2 = res.width-1;
-            int py1 = avgy - roisize; if(py1 < 0) py1 = 0;
-            int py2 = avgy + roisize; if(py2 >= res.height) py2 = res.height-1;
+            //if we are in waiting state, check trigger condition
+            bool trigger_capture = false;
+            if(panelnumber >= NOFPANELS)
+                trigger_capture = yarp::os::Time::now() - pimagetime > 0.04;
 
-            for(int x = px1; x <= px2; x+=2) {
-                image(x, py1) = yarp::sig::PixelBgr(255, 255, 255);
-                image(x, py2) = yarp::sig::PixelBgr(255, 255, 255);
+            //if we are in waiting state and
+            if(trigger_capture) {
+                //trigger the capture of the panels only if we aren't already
+                pimagetime = yarp::os::Time::now();
+                yarp::sig::ImageOf< yarp::sig::PixelBgr> &image_ref =
+                        debugPort.prepare();
+                image_ptr = &image_ref;
+                image_ptr->resize(res.width * NOFPANELS, res.height);
+                image_ptr->zero();
+                panelnumber = 0;
             }
-            for(int y = py1; y <= py2; y+=2) {
-                image(px1, y) = yarp::sig::PixelBgr(255, 255, 255);
-                image(px2, y) = yarp::sig::PixelBgr(255, 255, 255);
+
+            if(panelnumber < NOFPANELS) {
+
+                yarp::sig::ImageOf<yarp::sig::PixelBgr> &image = *image_ptr;
+                int panoff = panelnumber * res.width;
+
+                int px1 = avgx - roisize; if(px1 < 0) px1 = 0;
+                int px2 = avgx + roisize; if(px2 >= res.width) px2 = res.width-1;
+                int py1 = avgy - roisize; if(py1 < 0) py1 = 0;
+                int py2 = avgy + roisize; if(py2 >= res.height) py2 = res.height-1;
+
+                px1 += panoff; px2 += panoff;
+                for(int x = px1; x <= px2; x+=2) {
+                    image(x, py1) = yarp::sig::PixelBgr(255, 255, 255);
+                    image(x, py2) = yarp::sig::PixelBgr(255, 255, 255);
+                }
+                for(int y = py1; y <= py2; y+=2) {
+                    image(px1, y) = yarp::sig::PixelBgr(255, 255, 255);
+                    image(px2, y) = yarp::sig::PixelBgr(255, 255, 255);
+                }
+
+                std::vector<vParticle> indexedlist = vpf.getps();
+
+                for(unsigned int i = 0; i < indexedlist.size(); i++) {
+
+                    int py = indexedlist[i].gety();
+                    int px = indexedlist[i].getx();
+
+                    if(py < 0 || py >= res.height || px < 0 || px >= res.width)
+                        continue;
+                    image(px+panoff, py) =
+                            yarp::sig::PixelBgr(255, 255, 255);
+
+                }
+                drawEvents(image, qROI.q, panoff);
+
+                panelnumber++;
             }
 
-            std::vector<vParticle> indexedlist = vpf.getps();
-
-            for(unsigned int i = 0; i < indexedlist.size(); i++) {
-
-                int py = indexedlist[i].gety();
-                int px = indexedlist[i].getx();
-
-                if(py < 0 || py >= res.height || px < 0 || px >= res.width) continue;
-                image(px, py) = yarp::sig::PixelBgr(255, 255, 255);
-
+            if(panelnumber == NOFPANELS) {
+                panelnumber++;
+                debugPort.write();
             }
-            drawEvents(image, qROI.q, currentstamp, 0, false);
 
-            //drawcircle(image, avgx, avgy, avgr+0.5, 1);
-
-            debugPort.write();
         }
+
+
+
+
+
+//        static double pimagetime = yarp::os::Time::now();
+//        double pimagetimedt = yarp::os::Time::now() - pimagetime;
+//        if(pimagetimedt > 0.04) {
+//            pimagetime += pimagetimedt;
+
+
+
+//            yarp::sig::ImageOf< yarp::sig::PixelBgr> &image = debugPort.prepare();
+//            image.resize(res.width * 3, res.height);
+//            image.zero();
+
+
+//            int px1 = avgx - roisize; if(px1 < 0) px1 = 0;
+//            int px2 = avgx + roisize; if(px2 >= res.width) px2 = res.width-1;
+//            int py1 = avgy - roisize; if(py1 < 0) py1 = 0;
+//            int py2 = avgy + roisize; if(py2 >= res.height) py2 = res.height-1;
+
+//            px1 += panoff; px2 += panoff;
+//            for(int x = px1; x <= px2; x+=2) {
+//                image(x, py1) = yarp::sig::PixelBgr(255, 255, 255);
+//                image(x, py2) = yarp::sig::PixelBgr(255, 255, 255);
+//            }
+//            for(int y = py1; y <= py2; y+=2) {
+//                image(px1, y) = yarp::sig::PixelBgr(255, 255, 255);
+//                image(px2, y) = yarp::sig::PixelBgr(255, 255, 255);
+//            }
+
+//            std::vector<vParticle> indexedlist = vpf.getps();
+
+//            for(unsigned int i = 0; i < indexedlist.size(); i++) {
+
+//                int py = indexedlist[i].gety();
+//                int px = indexedlist[i].getx();
+
+//                if(py < 0 || py >= res.height || px < 0 || px >= res.width)
+//                    continue;
+//                image(px+panoff, py) =
+//                        yarp::sig::PixelBgr(255, 255, 255);
+
+//            }
+//            drawEvents(image, qROI.q, panoff);
+
+//            //drawcircle(image, avgx, avgy, avgr+0.5, 1);
+
+//            debugPort.write();
+//        }
 
     }
 

@@ -49,34 +49,31 @@ double generateGaussianNoise(double mu, double sigma)
     return z0 * sigma + mu;
 }
 
-void drawEvents(yarp::sig::ImageOf< yarp::sig::PixelBgr> &image, ev::vQueue &q, int currenttime, double tw, bool flip) {
+void drawEvents(yarp::sig::ImageOf< yarp::sig::PixelBgr> &image, ev::vQueue &q,
+                int offsetx) {
 
     if(q.empty()) return;
 
-    for(unsigned int i = 0; i < q.size(); i++) {
-        if(tw) {
-            double dt = currenttime - q[i]->stamp;
-            if(dt < 0) dt += ev::vtsHelper::max_stamp;
-            if(dt > tw) break;
-        }
-
+    //draw oldest first
+    for(int i = (int)q.size()-1; i >= 0; i--) {
+        double p = (double)i / (double)q.size();
         auto v = is_event<AE>(q[i]);
-        if(flip)
-            image(image.width() - 1 - v->x, image.height() - 1 - v->y) = yarp::sig::PixelBgr(0, 255, 0);
-        else
-            image(v->x, v->y) = yarp::sig::PixelBgr(0, 255, 0);
-
+        image(v->x + offsetx, v->y) =
+                yarp::sig::PixelBgr(255 * (1-p), 0, 255);
     }
 }
 
-void drawcircle(yarp::sig::ImageOf<yarp::sig::PixelBgr> &image, int cx, int cy, int cr, int id)
+void drawcircle(yarp::sig::ImageOf<yarp::sig::PixelBgr> &image, int cx, int cy,
+                int cr, int id)
 {
 
     for(int y = -cr; y <= cr; y++) {
         for(int x = -cr; x <= cr; x++) {
-            if(fabs(sqrt(pow(x, 2.0) + pow(y, 2.0)) - (double)cr) > 0.8) continue;
+            if(fabs(sqrt(pow(x, 2.0) + pow(y, 2.0)) - (double)cr) > 0.8)
+                continue;
             int px = cx + x; int py = cy + y;
-            if(py < 0 || py > image.height()-1 || px < 0 || px > image.width()-1) continue;
+            if(py<0 || py>image.height()-1 || px<0 || px>image.width()-1)
+                continue;
             switch(id) {
             case(0): //green
                 image(px, py) = yarp::sig::PixelBgr(0, 255, 0);
