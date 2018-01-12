@@ -173,9 +173,9 @@ public:
     void initLikelihood(int windowSize)
     {
         likelihood = minlikelihood;
-        inlierCount = 0;
+        inlierCount = -r * angbuckets;
         outlierCount = 0;
-        angdist.zero();
+        angdist = r;
         score = 0;
         nw = windowSize;
         resetArea();
@@ -187,32 +187,52 @@ public:
         double dy = vy - y;
 
         double sqrd = pcb->queryDistance((int)dy, (int)dx) - r;
+        double fsqrd = std::fabs(sqrd);
+        int a = pcb->queryBinNumber((int)dy, (int)dx);
         //double sqrd = sqrt(pow(dx, 2.0) + pow(dy, 2.0)) - r;
 
-        if(sqrd > inlierParameter) {
-            return;
-        }
+        if(fsqrd < angdist[a]) {
+            score += angdist[a] - fsqrd; //maximum score will be bins * r;
+            angdist[a] = std::fabs(sqrd);
 
-        if(sqrd > -inlierParameter) {
-            //int a = 0.5 + (angbuckets-1) * (atan2(dy, dx) + M_PI) / (2.0 * M_PI);
-
-            int a = pcb->queryBinNumber((int)dy, (int)dx);
-
-            if(!angdist[a]) {
-                inlierCount++;
-                angdist[a] = 1;
-
-                score = inlierCount - (negativeScaler * outlierCount);
-                if(score >= likelihood) {
-                    likelihood = score;
-                    nw = n;
-                }
-
+            if(score >= likelihood * r) {
+                likelihood = score / r;
+                nw = n;
             }
-
-        } else {
-            outlierCount++;
         }
+
+
+        if(sqrd < -inlierParameter)
+            score -= negativeScaler;
+
+
+
+//        if(sqrd > inlierParameter) {
+//            return;
+//        }
+
+//        if(sqrd > -inlierParameter) {
+//            //int a = 0.5 + (angbuckets-1) * (atan2(dy, dx) + M_PI) / (2.0 * M_PI);
+
+//            int a = pcb->queryBinNumber((int)dy, (int)dx);
+
+//            if(angdist[a]
+
+//            if(!angdist[a]) {
+//                inlierCount++;
+//                angdist[a] = 1;
+
+//                score = inlierCount - (negativeScaler * outlierCount);
+//                if(score >= likelihood) {
+//                    likelihood = score;
+//                    nw = n;
+//                }
+
+//            }
+
+//        } else {
+//            outlierCount++;
+//        }
 
     }
 
