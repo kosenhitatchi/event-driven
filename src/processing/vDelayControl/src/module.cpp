@@ -89,6 +89,7 @@ bool module::configure(yarp::os::ResourceFinder &rf)
     delaycontrol.setTrueThreshold(trueDetectionThreshold);
     delaycontrol.setResetTimeout(resetTimeout);
     delaycontrol.setMotionVariance(particleVariance);
+    //delaycontrol.setMinRawLikelihood(minlikelihood);
 
     delaycontrol.initFilter(width, height, particles, bins, adaptivesampling,
                             nthread, minlikelihood, inlierParameter, nRandResample, negativeBias);
@@ -162,7 +163,7 @@ bool module::respond(const yarp::os::Bottle& command,
 
         if(param == "trackThresh") {
             reply.addString("setting tracking parameter");
-            delaycontrol.updateFilterParams(value);
+            delaycontrol.setMinRawLikelihood(value);
         }
         else if(param == "gain") {
             reply.addString("setting delay-control gain");

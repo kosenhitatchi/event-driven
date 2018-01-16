@@ -83,10 +83,10 @@ public:
     void initFilter(int width, int height, int nparticles,
                     int bins, bool adaptive, int nthreads,
                     double minlikelihood, double inlierThresh, double randoms, double negativeBias);
-    void updateFilterParams(double minlikelihood);
     void performReset();
     void setFilterInitialState(int x, int y, int r);
 
+    void setMinRawLikelihood(double value);
     void setMaxRawLikelihood(int value);
     void setNegativeBias(int value);
     void setInlierParameter(int value);

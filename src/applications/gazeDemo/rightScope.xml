@@ -21,6 +21,12 @@
                color="Black"
                type="lines"
                size="1" />
+        <graph remote="/vpfR/scope:o"
+                index="9"
+                title="Q size"
+                color="Purple"
+                type="lines"
+                size="1" />
     </plot>
     <plot gridx="0"
           gridy="1"

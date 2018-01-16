@@ -33,10 +33,11 @@ void delayControl::initFilter(int width, int height, int nparticles, int bins,
     res.width = width;
 }
 
-void delayControl::updateFilterParams(double minlikelihood)
+void delayControl::setMinRawLikelihood(double value)
 {
-    if(minlikelihood > 0)
-        vpf.setMinLikelihood(minlikelihood);
+    if(value > 0) {
+        vpf.setMinLikelihood(value);
+    }
 }
 
 void delayControl::setFilterInitialState(int x, int y, int r)
@@ -205,8 +206,8 @@ void delayControl::run()
         Tresample = yarp::os::Time::now() - Tresample;
 
         Tpredict = yarp::os::Time::now();
-        vpf.performPrediction(std::max(addEvents / (5.0 * avgr), 0.7));
-        //vpf.performPrediction(motionVariance);
+        //vpf.performPrediction(std::max(addEvents / (5.0 * avgr), 0.7));
+        vpf.performPrediction(motionVariance);
         Tpredict = yarp::os::Time::now() - Tpredict;
 
         //check for stagnancy
@@ -263,6 +264,7 @@ void delayControl::run()
             static double val7 = 0;
             static double val8 = 0;
             //static double val9 = 0;
+            static double val10 = 0;
 
             double ratetimedt = yarp::os::Time::now() - ratetime;
             val1 += inputPort.queryDelayT();
@@ -274,6 +276,7 @@ void delayControl::run()
             val7 += dr;
             val8 += vpf.maxlikelihood / (double)maxRawLikelihood;
             //val9 += cpuusage.getProcessorUsage();
+            val10 += qROI.n;
             ratetime += ratetimedt;
             countscope++;
 
@@ -292,6 +295,7 @@ void delayControl::run()
                 scopedata.addDouble(val7/countscope);
                 scopedata.addDouble(val8/countscope);
                 scopedata.addDouble(5000 * cpuusage.getProcessorUsage());
+                scopedata.addDouble(val10/countscope);
 
                 val1 = 0;//-ev::vtsHelper::max_stamp;
                 val2 = 0;//-ev::vtsHelper::max_stamp;
@@ -302,6 +306,7 @@ void delayControl::run()
                 val7 = 0;//-ev::vtsHelper::max_stamp;
                 val8 = 0;
                 //val9 = 0;
+                val10 = 0;
 
                 countscope = 0;
 
@@ -311,6 +316,8 @@ void delayControl::run()
 
         //output a debug image
         if(debugPort.getOutputCount()) {
+
+            static double prev_likelihood = vpf.maxlikelihood;
             static int NOFPANELS = 3;
 
             static yarp::sig::ImageOf< yarp::sig::PixelBgr> *image_ptr = 0;
@@ -320,8 +327,11 @@ void delayControl::run()
 
             //if we are in waiting state, check trigger condition
             bool trigger_capture = false;
-            if(panelnumber >= NOFPANELS)
-                trigger_capture = yarp::os::Time::now() - pimagetime > 0.04;
+            if(panelnumber >= NOFPANELS) {
+                trigger_capture = prev_likelihood > detectionThreshold &&
+                        vpf.maxlikelihood <= detectionThreshold;
+            }
+            prev_likelihood = vpf.maxlikelihood;
 
             //if we are in waiting state and
             if(trigger_capture) {
@@ -347,12 +357,12 @@ void delayControl::run()
 
                 px1 += panoff; px2 += panoff;
                 for(int x = px1; x <= px2; x+=2) {
-                    image(x, py1) = yarp::sig::PixelBgr(255, 255, 255);
-                    image(x, py2) = yarp::sig::PixelBgr(255, 255, 255);
+                    image(x, py1) = yarp::sig::PixelBgr(255, 255, 120 * panelnumber);
+                    image(x, py2) = yarp::sig::PixelBgr(255, 255, 120 * panelnumber);
                 }
                 for(int y = py1; y <= py2; y+=2) {
-                    image(px1, y) = yarp::sig::PixelBgr(255, 255, 255);
-                    image(px2, y) = yarp::sig::PixelBgr(255, 255, 255);
+                    image(px1, y) = yarp::sig::PixelBgr(255, 255, 120 * panelnumber);
+                    image(px2, y) = yarp::sig::PixelBgr(255, 255, 120 * panelnumber);
                 }
 
                 std::vector<vParticle> indexedlist = vpf.getps();
@@ -364,8 +374,9 @@ void delayControl::run()
 
                     if(py < 0 || py >= res.height || px < 0 || px >= res.width)
                         continue;
+                    int pscale = 255 * indexedlist[i].getl() / maxRawLikelihood;
                     image(px+panoff, py) =
-                            yarp::sig::PixelBgr(255, 255, 255);
+                            yarp::sig::PixelBgr(pscale, 255, pscale);
 
                 }
                 drawEvents(image, qROI.q, panoff);
