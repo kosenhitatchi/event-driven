@@ -231,7 +231,7 @@ void vParticle::predict(double sigma)
     //tw += 12500;
     x = generateGaussianNoise(x, sigma);
     y = generateGaussianNoise(y, sigma);
-    r = generateGaussianNoise(r, sigma * 0.4);
+    r = generateGaussianNoise(r, sigma * 0.2);
 
     if(constrain) checkConstraints();
 }

@@ -175,7 +175,7 @@ public:
         likelihood = minlikelihood;
         inlierCount = 0;
         outlierCount = 0;
-        angdist = inlierParameter * 2.0;
+        angdist = 1.0 + inlierParameter;
         //angdist = 0;
         score = 0;
         nw = windowSize;
@@ -189,8 +189,8 @@ public:
 
         double sqrd = pcb->queryDistance((int)dy, (int)dx) - r;
         //double sqrd = sqrt(pow(dx, 2.0) + pow(dy, 2.0)) - r;
-        double fsqrd = std::fabs(sqrd) - inlierParameter;
-        if(fsqrd < 0) fsqrd = 0;
+        double fsqrd = std::fabs(sqrd) - 1.0;
+
         //int a = 0.5 + (angbuckets-1) * (atan2(dy, dx) + M_PI) / (2.0 * M_PI);
         int a = pcb->queryBinNumber((int)dy, (int)dx);
 
@@ -209,10 +209,21 @@ public:
 
         //OPTION 2
 
+        if(sqrd > 1.0 + inlierParameter)
+            return;
+
         if(fsqrd < angdist[a]) {
 
-            score += (angdist[a] - fsqrd) / (inlierParameter * 2.0); //maximum score will be bins;
-            angdist[a] = fsqrd;
+            if(fsqrd < 0) {
+                score += angdist[a];
+                angdist[a] = 0;
+            } else {
+                score += (angdist[a] - fsqrd) / inlierParameter; //if inlierParameter is 0 then angdist[a]=1 and fsqrd<0; we won't get here.
+                angdist[a] = fsqrd;
+            }
+
+//            score += (angdist[a] - fsqrd) / inlierParameter; //maximum score will be bins;
+//            angdist[a] = fsqrd;
 
             if(score >= likelihood) {
                 likelihood = score;
