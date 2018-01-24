@@ -354,6 +354,11 @@ void vParticlefilter::setNegativeBias(double value)
         ps[i].setNegativeBias(value);
 }
 
+void vParticlefilter::setAdaptive(bool value)
+{
+    adaptive = value;
+}
+
 void vParticlefilter::performObservation(const vQueue &q)
 {
     double normval = 0.0;

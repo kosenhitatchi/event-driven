@@ -193,6 +193,16 @@ bool module::respond(const yarp::os::Bottle& command,
             reply.addString("setting the inlier width");
             delaycontrol.setInlierParameter(value);
         }
+        else if(param == "adaptive") {
+            if(value) {
+                reply.addString("setting the resample method = adadptive");
+                delaycontrol.setAdaptive();
+            }
+            else {
+                reply.addString("setting the resample method = every update");
+                delaycontrol.setAdaptive(false);
+            }
+        }
         else {
             error = true;
             reply.addString("incorrect parameter");

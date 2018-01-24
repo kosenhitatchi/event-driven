@@ -175,7 +175,8 @@ public:
         likelihood = minlikelihood;
         inlierCount = 0;
         outlierCount = 0;
-        angdist = 0;//r;
+        angdist = inlierParameter * 2.0;
+        //angdist = 0;
         score = 0;
         nw = windowSize;
         resetArea();
@@ -188,7 +189,8 @@ public:
 
         double sqrd = pcb->queryDistance((int)dy, (int)dx) - r;
         //double sqrd = sqrt(pow(dx, 2.0) + pow(dy, 2.0)) - r;
-        double fsqrd = std::fabs(sqrd);
+        double fsqrd = std::fabs(sqrd) - inlierParameter;
+        if(fsqrd < 0) fsqrd = 0;
         //int a = 0.5 + (angbuckets-1) * (atan2(dy, dx) + M_PI) / (2.0 * M_PI);
         int a = pcb->queryBinNumber((int)dy, (int)dx);
 
@@ -206,46 +208,48 @@ public:
 //        }
 
         //OPTION 2
-//        if(fsqrd < angdist[a]) {
-//            score += (angdist[a] - fsqrd) / 10; //maximum score will be bins;
-//            angdist[a] = fsqrd;
 
-//            if(score >= likelihood) {
-//                likelihood = score;
-//                nw = n;
-//            }
-//        }
+        if(fsqrd < angdist[a]) {
+
+            score += (angdist[a] - fsqrd) / (inlierParameter * 2.0); //maximum score will be bins;
+            angdist[a] = fsqrd;
+
+            if(score >= likelihood) {
+                likelihood = score;
+                nw = n;
+            }
+        }
 
 
-//        if(sqrd < -inlierParameter)
-//            score -= negativeScaler;
+        if(sqrd < -inlierParameter)
+            score -= negativeScaler;
 
 
         //ORIGINAL
-        if(sqrd > inlierParameter) {
-            return;
-        }
+//        if(sqrd > inlierParameter) {
+//            return;
+//        }
 
-        if(sqrd > -inlierParameter) {
-            //int a = 0.5 + (angbuckets-1) * (atan2(dy, dx) + M_PI) / (2.0 * M_PI);
+//        if(sqrd > -inlierParameter) {
+//            //int a = 0.5 + (angbuckets-1) * (atan2(dy, dx) + M_PI) / (2.0 * M_PI);
 
-            //int a = pcb->queryBinNumber((int)dy, (int)dx);
+//            //int a = pcb->queryBinNumber((int)dy, (int)dx);
 
-            if(!angdist[a]) {
-                inlierCount++;
-                angdist[a] = 1;
+//            if(!angdist[a]) {
+//                inlierCount++;
+//                angdist[a] = 1;
 
-                score = inlierCount - (negativeScaler * outlierCount);
-                if(score >= likelihood) {
-                    likelihood = score;
-                    nw = n;
-                }
+//                score = inlierCount - (negativeScaler * outlierCount);
+//                if(score >= likelihood) {
+//                    likelihood = score;
+//                    nw = n;
+//                }
 
-            }
+//            }
 
-        } else {
-            outlierCount++;
-        }
+//        } else {
+//            outlierCount++;
+//        }
 
     }
 
@@ -341,6 +345,7 @@ public:
     void setMinLikelihood(double value);
     void setInlierParameter(double value);
     void setNegativeBias(double value);
+    void setAdaptive(bool value = true);
 
     void performObservation(const vQueue &q);
     void extractTargetPosition(double &x, double &y, double &r);

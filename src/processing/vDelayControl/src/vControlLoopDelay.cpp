@@ -71,6 +71,11 @@ void delayControl::setTrueThreshold(double value)
     detectionThreshold = value * maxRawLikelihood;
 }
 
+void delayControl::setAdaptive(double value)
+{
+    vpf.setAdaptive(value);
+}
+
 void delayControl::setGain(double value)
 {
     gain = value;
@@ -328,8 +333,9 @@ void delayControl::run()
             //if we are in waiting state, check trigger condition
             bool trigger_capture = false;
             if(panelnumber >= NOFPANELS) {
-                trigger_capture = prev_likelihood > detectionThreshold &&
-                        vpf.maxlikelihood <= detectionThreshold;
+                //trigger_capture = prev_likelihood > detectionThreshold &&
+                 //       vpf.maxlikelihood <= detectionThreshold;
+                trigger_capture = yarp::os::Time::now() - pimagetime > 0.1;
             }
             prev_likelihood = vpf.maxlikelihood;
 

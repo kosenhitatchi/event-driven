@@ -92,6 +92,7 @@ public:
     void setInlierParameter(int value);
     void setMotionVariance(double value);
     void setTrueThreshold(double value);
+    void setAdaptive(double value = true);
 
     void setGain(double value);
     void setMinToProc(int value);
